@@ -36,11 +36,23 @@ export function useSeoAnalysis() {
     estado.value = '🔎 Iniciando análisis...';
     resumen.value = null;
     lighthouse.value = null;
+
     try {
       const data = await runWebPageTest(url.value);
       console.log('[useSeoAnalysis] Resultado recibido del backend (resumen):', data);
+
       if (data.success && data.resumen?.testId) {
         resumen.value = data.resumen;
+
+        // 🔥 Arreglo pro: asegurar campos básicos
+        if (resumen.value) {
+          resumen.value.url = resumen.value.url || url.value;
+          resumen.value.loadTime = resumen.value.loadTime || 0;
+          resumen.value.totalSize = resumen.value.totalSize || 0;
+          resumen.value.requests = resumen.value.requests || 0;
+        }
+
+        console.log('%c[DEBUG] Resumen corregido:', 'color: green; font-weight: bold;', JSON.stringify(resumen.value, null, 2));
         await obtenerLighthouseDesdeBackend(data.resumen.testId);
         estado.value = '✅ Análisis completado.';
       } else {
@@ -66,10 +78,38 @@ export function useSeoAnalysis() {
       estado.value = '🔍 Obteniendo resultados de Lighthouse...';
       const data = await getLighthouseResults(testId);
       console.log('[useSeoAnalysis] Lighthouse recibido:', data);
+
       if (data.lighthouse) {
         lighthouse.value = data.lighthouse;
-        console.log('[useSeoAnalysis] Lighthouse cargado correctamente:', lighthouse.value);
+
+        // Extraer Core Web Vitals
+        if (data.lighthouse.audits) {
+          const lcp = data.lighthouse.audits['largest-contentful-paint']?.numericValue;
+          const cls = data.lighthouse.audits['cumulative-layout-shift']?.numericValue;
+          const tbt = data.lighthouse.audits['total-blocking-time']?.numericValue;
+
+          console.log('[useSeoAnalysis] Core Web Vitals extraídos:', { lcp, cls, tbt });
+
+          // Asignar Core Web Vitals al resumen
+          if (resumen.value) {
+            resumen.value.lcp = lcp;
+            resumen.value.cls = cls;
+            resumen.value.tbt = tbt;
+
+            // 🔥 Forzar actualización de Vue
+            resumen.value = { ...resumen.value };
+            console.log('[useSeoAnalysis] Core Web Vitals asignados al resumen:', resumen.value);
+          } else {
+            console.warn('[useSeoAnalysis] No se pudo asignar Core Web Vitals: resumen es null');
+          }
+        } else {
+          console.warn('[useSeoAnalysis] No se encontraron audits en el informe de Lighthouse');
+        }
+
+        console.log('%c[DEBUG] Lighthouse completo:', 'color: blue; font-weight: bold;', JSON.stringify(lighthouse.value, null, 2));
         estado.value = '✅ Análisis completado.';
+        
+        // Generar Insight IA
         try {
           geminiInsight.value = '⏳ Analizando con IA...';
           const aiText = await analyzeLighthouseWithGemini(data.lighthouse, url.value);
@@ -89,9 +129,6 @@ export function useSeoAnalysis() {
     }
   }
 
-  // Preparado para integrar otros análisis (sitemap, metadatos, etc)
-  // Ejemplo: async function analizarSitemap(url) { ... }
-
   return {
     url,
     estado,
@@ -105,4 +142,4 @@ export function useSeoAnalysis() {
   };
 }
 
-export const seoAnalysis = useSeoAnalysis(); 
+export const seoAnalysis = useSeoAnalysis();
