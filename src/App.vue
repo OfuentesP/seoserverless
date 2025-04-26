@@ -22,39 +22,64 @@
       </div>
 
       <div v-if="resumen" class="mt-8 p-6 bg-white rounded shadow-md">
-        <h2 class="text-xl font-bold mb-4 text-blue-800">✅ Resultados WebPageTest:</h2>
-        <p>⏱ <strong>Load Time:</strong> {{ resumen.loadTime }} ms</p>
-        <p>⚡ <strong>Speed Index:</strong> {{ resumen.SpeedIndex }} ms</p>
-        <p>📡 <strong>TTFB:</strong> {{ resumen.TTFB }} ms</p>
-        <a
-          :href="resumen.detalles"
-          target="_blank"
-          class="block text-blue-600 mt-4 underline"
-        >
-          Ver informe completo en WebPageTest
-        </a>
+        <h2 class="text-2xl font-bold mb-6 text-blue-800">📊 Resultados WebPageTest</h2>
+        
+        <div class="space-y-6">
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <h3 class="text-xl font-semibold mb-4 text-gray-700">⚡ Métricas de Rendimiento</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="bg-white p-4 rounded shadow-sm">
+                <h4 class="text-lg font-medium text-gray-600 mb-2">⏱ Tiempo de Carga</h4>
+                <p class="text-2xl font-bold text-blue-600">{{ resumen.loadTime }} ms</p>
+              </div>
+              <div class="bg-white p-4 rounded shadow-sm">
+                <h4 class="text-lg font-medium text-gray-600 mb-2">⚡ Índice de Velocidad</h4>
+                <p class="text-2xl font-bold text-blue-600">{{ resumen.SpeedIndex }} ms</p>
+              </div>
+              <div class="bg-white p-4 rounded shadow-sm">
+                <h4 class="text-lg font-medium text-gray-600 mb-2">📡 TTFB</h4>
+                <p class="text-2xl font-bold text-blue-600">{{ resumen.TTFB }} ms</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-gray-50 p-4 rounded-lg">
+            <h3 class="text-xl font-semibold mb-4 text-gray-700">🔗 Enlaces y Referencias</h3>
+            <a 
+              :href="resumen.detalles" 
+              target="_blank" 
+              class="inline-flex items-center text-blue-600 hover:text-blue-800 transition-colors"
+            >
+              <span class="mr-2">📋</span>
+              Ver informe completo en WebPageTest
+            </a>
+          </div>
+        </div>
       </div>
 
-      <div v-if="lighthouse" class="mt-8 p-6 bg-white rounded shadow-md">
-        <h2 class="text-2xl font-bold text-green-700 mb-6">📊 Auditoría Lighthouse</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <div v-for="(cat, key) in lighthouseCategorias" :key="key" class="bg-white p-6 rounded-lg shadow text-center">
-            <p class="text-lg font-semibold text-gray-800">{{ cat.emoji }} {{ cat.nombre }}</p>
-            <p v-if="lighthouse.categories && lighthouse.categories[key]" class="text-2xl font-bold text-blue-600">
+      <div v-if="lighthouse" class="mt-12 mx-auto max-w-3xl p-8 bg-white rounded-2xl shadow-2xl animate-fadeIn">
+        <h2 class="text-3xl font-extrabold text-green-700 mb-8 text-center tracking-tight flex items-center justify-center gap-2">
+          <span>📊</span> Auditoría Lighthouse
+        </h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-10">
+          <div v-for="(cat, key) in lighthouseCategorias" :key="key" class="bg-gradient-to-br from-blue-50 to-white p-6 rounded-xl shadow text-center border border-blue-100">
+            <p class="text-lg font-semibold text-gray-800 flex items-center justify-center gap-2">{{ cat.emoji }} {{ cat.nombre }}</p>
+            <p v-if="lighthouse.categories && lighthouse.categories[key]" class="text-3xl font-extrabold text-blue-600 mt-2">
               {{ (lighthouse.categories[key].score * 100).toFixed(0) }} / 100
             </p>
             <p v-else class="text-gray-400">No disponible</p>
           </div>
         </div>
-        
-        <div v-if="lighthouse.audits" class="mt-8">
-          <h3 class="text-xl font-bold text-blue-800 mb-4">Detalles de la auditoría</h3>
-          <div class="grid grid-cols-1 gap-4">
-            <div v-for="(audit, key) in lighthouse.audits" :key="key" class="p-4 border rounded">
-              <h4 class="font-bold">{{ audit.title }}</h4>
-              <p class="text-sm text-gray-600">{{ audit.description }}</p>
-              <p class="mt-2">
-                <span class="font-semibold">Puntuación:</span> 
+        <div v-if="lighthouse.audits" class="mt-10">
+          <h3 class="text-2xl font-bold text-blue-800 mb-6 text-center flex items-center gap-2 justify-center">
+            <span>📝</span> Detalles de la auditoría
+          </h3>
+          <div class="grid grid-cols-1 gap-4 max-h-[420px] overflow-y-auto pr-2">
+            <div v-for="(audit, key) in lighthouse.audits" :key="key" class="p-5 border rounded-lg bg-gray-50 shadow-sm">
+              <h4 class="font-bold text-lg text-gray-800 mb-1">{{ audit.title }}</h4>
+              <p class="text-sm text-gray-600 mb-2">{{ audit.description }}</p>
+              <p>
+                <span class="font-semibold">Puntuación:</span>
                 <span :class="getScoreClass(audit.score)">
                   {{ (audit.score * 100).toFixed(0) }} / 100
                 </span>
