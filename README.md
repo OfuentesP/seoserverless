@@ -4,7 +4,7 @@ Una aplicación web moderna para analizar el rendimiento, SEO y metadatos de sit
 
 ## Características
 
-- Análisis de rendimiento web en tiempo real
+- Análisis de rendimiento web en tiempo real con WebPageTest
 - Métricas de velocidad y rendimiento
 - Puntuaciones de Lighthouse
 - Detección de tecnologías
@@ -47,16 +47,30 @@ npm run dev
 
 ## Uso
 
-1. Abre tu navegador y ve a `http://localhost:5173`
+1. Abre tu navegador y ve a `http://localhost:5174`
 2. Ingresa la URL del sitio web que deseas analizar
 3. Haz clic en "Analizar"
 4. Espera a que se complete el análisis
 5. Revisa los resultados detallados:
-   - Análisis de rendimiento
+   - Análisis de rendimiento con WebPageTest
    - Análisis de sitemap
    - Análisis de metadatos
    - Análisis de IA
 6. Descarga el informe en PDF
+
+## Integración con WebPageTest
+
+Esta aplicación utiliza la API de WebPageTest para realizar análisis de rendimiento web. Para obtener una API key:
+
+1. Regístrate en [WebPageTest](https://www.webpagetest.org/)
+2. Ve a tu perfil y solicita una API key
+3. Agrega tu API key al archivo `.env`
+
+La integración con WebPageTest proporciona:
+- Métricas de rendimiento (First Contentful Paint, Speed Index, Largest Contentful Paint)
+- Puntuación de rendimiento
+- Oportunidades de mejora
+- Enlaces a resultados detallados en WebPageTest
 
 ## Tecnologías Utilizadas
 
@@ -71,7 +85,7 @@ npm run dev
 ## Estructura del Proyecto
 
 - `src/components/`: Componentes Vue
-  - `UrlInputForm.vue`: Formulario para ingresar la URL
+  - `WebPageTest.vue`: Visualización del análisis de rendimiento con WebPageTest
   - `MetadataAnalysis.vue`: Visualización del análisis de metadatos
   - `SitemapAnalysis.vue`: Visualización del análisis de sitemap
   - `AIAnalysis.vue`: Visualización del análisis de IA
