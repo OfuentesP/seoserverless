@@ -46,7 +46,8 @@ app.post('/api/run-test', async (req, res) => {
       location: 'Dulles:Chrome', // You can change location if desired
       runs: 1,
       firstViewOnly: true,
-      f: 'json'
+      f: 'json',
+      lighthouse: true
     });
 
     if (!response || !response.data || !response.data.testId) {
@@ -65,11 +66,12 @@ app.post('/api/run-test', async (req, res) => {
 
     res.json({
       success: true,
-      summary: {
+      resumen: {
         loadTime: result.data.average.firstView.loadTime,
         SpeedIndex: result.data.average.firstView.SpeedIndex,
         TTFB: result.data.average.firstView.TTFB,
-        details: result.data.summary,
+        detalles: result.data.summary,
+        lighthouse: result.data.lighthouse || null,
       }
     });
   } catch (error) {

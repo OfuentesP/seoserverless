@@ -34,6 +34,33 @@
           Ver informe completo en WebPageTest
         </a>
       </div>
+      </div>
+
+      <div v-if="resumen && resumen.lighthouse" class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-6 animate-fadeIn">
+        <div class="sm:col-span-2">
+          <h2 class="text-2xl font-bold text-green-700 mb-6">📈 Resultados Lighthouse</h2>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow text-center">
+          <p class="text-lg font-semibold text-gray-800">Performance</p>
+          <p class="text-2xl font-bold text-blue-600">{{ (resumen.lighthouse.categories.performance.score * 100).toFixed(0) }} / 100</p>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow text-center">
+          <p class="text-lg font-semibold text-gray-800">Accesibilidad</p>
+          <p class="text-2xl font-bold text-blue-600">{{ (resumen.lighthouse.categories.accessibility.score * 100).toFixed(0) }} / 100</p>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow text-center">
+          <p class="text-lg font-semibold text-gray-800">Best Practices</p>
+          <p class="text-2xl font-bold text-blue-600">{{ (resumen.lighthouse.categories['best-practices'].score * 100).toFixed(0) }} / 100</p>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow text-center">
+          <p class="text-lg font-semibold text-gray-800">SEO</p>
+          <p class="text-2xl font-bold text-blue-600">{{ (resumen.lighthouse.categories.seo.score * 100).toFixed(0) }} / 100</p>
+        </div>
+        <div class="bg-white p-6 rounded-lg shadow text-center">
+          <p class="text-lg font-semibold text-gray-800">PWA</p>
+          <p class="text-2xl font-bold text-blue-600">{{ (resumen.lighthouse.categories.pwa.score * 100).toFixed(0) }} / 100</p>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -54,6 +81,7 @@ const analizar = async () => {
 
   cargando.value = true;
   estado.value = '🔎 Iniciando análisis...';
+
   resumen.value = null;
 
   try {
@@ -64,9 +92,10 @@ const analizar = async () => {
     });
 
     const data = await res.json();
+    console.log('👉 Resultado recibido del backend:', data);
 
     if (data.success) {
-      resumen.value = data.resumen;
+      resumen.value = data.summary;
       estado.value = '✅ Análisis completado.';
     } else {
       estado.value = '❌ No se pudo generar el informe.';
@@ -81,6 +110,14 @@ const analizar = async () => {
 </script>
 
 <style>
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.8s ease-out;
+}
 body {
   font-family: 'Source Serif Pro', serif;
 }
