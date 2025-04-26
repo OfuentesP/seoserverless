@@ -233,4 +233,42 @@ export const analyzeMetadataWithGemini = async (data, url) => {
       actionItems: []
     };
   }
+};
+
+/**
+ * Analiza los resultados de Lighthouse con Gemini
+ * @param {Object} lighthouseData - Datos Lighthouse
+ * @param {string} url - URL analizada
+ * @returns {Promise<string>} Análisis generado por Gemini
+ */
+export const analyzeLighthouseWithGemini = async (lighthouseData, url) => {
+  try {
+    // Preparar el prompt para Gemini
+    const prompt = `
+      Analiza los siguientes resultados de Lighthouse para la URL: ${url}
+      Puntuaciones:
+      - Performance: ${lighthouseData.categories?.performance ? Math.round(lighthouseData.categories.performance.score * 100) : 'N/A'}
+      - Accesibilidad: ${lighthouseData.categories?.accessibility ? Math.round(lighthouseData.categories.accessibility.score * 100) : 'N/A'}
+      - Best Practices: ${lighthouseData.categories?.['best-practices'] ? Math.round(lighthouseData.categories['best-practices'].score * 100) : 'N/A'}
+      - SEO: ${lighthouseData.categories?.seo ? Math.round(lighthouseData.categories.seo.score * 100) : 'N/A'}
+      - PWA: ${lighthouseData.categories?.pwa ? Math.round(lighthouseData.categories.pwa.score * 100) : 'N/A'}
+
+      Si hay detalles de auditoría, considera también los siguientes puntos:
+      ${lighthouseData.audits ? Object.values(lighthouseData.audits).slice(0, 10).map(audit => `- ${audit.title}: ${audit.description} (${audit.score !== undefined ? (audit.score * 100).toFixed(0) + '/100' : 'N/A'})`).join('\n') : ''}
+
+      Por favor, genera el análisis en formato markdown, usando títulos jerárquicos (#, ##, ###) y agrega un emoji relevante al inicio de cada sección:
+      1. Un resumen general del rendimiento (usa un emoji de gráfico o check ✅)
+      2. Problemas identificados (usa un emoji de advertencia ⚠️)
+      3. Recomendaciones para mejorar (usa un emoji de bombilla 💡)
+      4. Acciones prioritarias (usa un emoji de cohete 🚀)
+
+      El análisis debe ser claro y fácil de leer para un usuario no técnico. Usa listas y negritas donde ayude a la comprensión.
+    `;
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text();
+  } catch (error) {
+    console.error('Error al analizar Lighthouse con Gemini:', error);
+    return 'No se pudo generar el análisis con IA debido a un error.';
+  }
 }; 

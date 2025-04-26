@@ -89,6 +89,11 @@
         </div>
       </div>
 
+      <div v-if="lighthouse && geminiInsight" class="mt-8 mx-auto max-w-3xl p-6 bg-gradient-to-br from-blue-50 to-green-50 rounded-xl shadow-lg border border-blue-200">
+        <h3 class="text-xl font-bold text-blue-900 mb-4 flex items-center gap-2"><span>🤖</span> Insight IA Gemini</h3>
+        <div class="text-gray-800 leading-relaxed" v-html="geminiMarkdownToHtml(geminiInsight)"></div>
+      </div>
+
       <div v-else-if="resumen" class="mt-8 text-center text-red-600">
         ⚠️ No se pudo obtener el informe de Lighthouse.
       </div>
@@ -98,12 +103,15 @@
 
 <script setup>
 import { ref } from 'vue';
+import { analyzeLighthouseWithGemini } from './services/gemini';
+import { marked } from 'marked';
 
 const url = ref('');
 const estado = ref('');
 const resumen = ref(null);
 const lighthouse = ref(null);
 const cargando = ref(false);
+const geminiInsight = ref('');
 
 const lighthouseCategorias = {
   performance: { nombre: 'Performance', emoji: '⚡' },
@@ -118,6 +126,30 @@ const getScoreClass = (score) => {
   if (score >= 0.5) return 'text-yellow-600 font-bold';
   return 'text-red-600 font-bold';
 };
+
+// Convierte el markdown Gemini a HTML seguro con reglas personalizadas
+function geminiMarkdownToHtml(md) {
+  // Convierte títulos con emoji al inicio a <h3>
+  md = md.replace(/^(#+)\s*([✅⚠️💡🚀])\s*(.*)$/gm, (match, hashes, emoji, title) => {
+    return `<h3>${emoji} ${title.trim()}</h3>`;
+  });
+  // Convierte otros títulos markdown a <h3> (sin emoji)
+  md = md.replace(/^(#+)\s*(.*)$/gm, (match, hashes, title) => {
+    return `<h3>${title.trim()}</h3>`;
+  });
+  // Cada línea que no es título ni lista, envuélvela en <p>
+  md = md.replace(/^(?!<h3>|\*|\-|\s*$)(.+)$/gm, '<p>$1</p>');
+  // Listas markdown a <ul><li>
+  md = md.replace(/\n\* (.+)/g, '<li>$1</li>');
+  md = md.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+  // Negritas
+  md = md.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Cursivas
+  md = md.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Enlaces
+  md = md.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return md;
+}
 
 const analizar = async () => {
   if (!url.value) {
@@ -174,6 +206,14 @@ const obtenerLighthouseDesdeBackend = async (testId) => {
       lighthouse.value = data.lighthouse;
       console.log('✅ Lighthouse cargado correctamente:', lighthouse.value);
       estado.value = '✅ Análisis completado.';
+      // Llamar a Gemini para análisis de valor SOLO después de recibir Lighthouse
+      try {
+        geminiInsight.value = '⏳ Analizando con IA...';
+        const aiText = await analyzeLighthouseWithGemini(data.lighthouse, url.value);
+        geminiInsight.value = aiText;
+      } catch (e) {
+        geminiInsight.value = 'No se pudo generar el insight con IA.';
+      }
     } else {
       console.warn('⚠️ Lighthouse no disponible en la respuesta:', data);
       estado.value = '⚠️ No se pudo obtener el informe de Lighthouse.';
