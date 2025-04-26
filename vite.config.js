@@ -7,14 +7,12 @@ export default defineConfig({
   plugins: [vue()],
   resolve: {
     alias: {
-      // Polyfills for Node.js modules
       stream: 'stream-browserify',
       buffer: 'buffer',
       util: 'util',
       process: 'process/browser',
       events: 'events',
       timers: 'timers-browserify',
-      // Add path aliases
       '@': resolve(__dirname, 'src'),
     }
   },
@@ -46,21 +44,10 @@ export default defineConfig({
       overlay: false
     },
     proxy: {
-      '/api/metadata': {
-        target: 'http://localhost:3001',
-        changeOrigin: true
-      },
-      '/api/sitemap': {
-        target: 'http://localhost:3001',
-        changeOrigin: true
-      },
-      '/api/ai': {
-        target: 'http://localhost:3001',
-        changeOrigin: true
-      },
-      '/api/webpagetest': {
-        target: 'http://localhost:3001',
-        changeOrigin: true
+      '/api': {
+        target: 'http://localhost:3000', // 🔥 corregido a 3000
+        changeOrigin: true,
+        secure: false,
       }
     }
   }

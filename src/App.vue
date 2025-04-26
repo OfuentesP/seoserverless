@@ -34,31 +34,20 @@
           Ver informe completo en WebPageTest
         </a>
       </div>
-      </div>
+    </div>
 
-      <div v-if="resumen && resumen.lighthouse" class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-6 animate-fadeIn">
-        <div class="sm:col-span-2">
-          <h2 class="text-2xl font-bold text-green-700 mb-6">📈 Resultados Lighthouse</h2>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow text-center">
-          <p class="text-lg font-semibold text-gray-800">Performance</p>
-          <p class="text-2xl font-bold text-blue-600">{{ (resumen.lighthouse.categories.performance.score * 100).toFixed(0) }} / 100</p>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow text-center">
-          <p class="text-lg font-semibold text-gray-800">Accesibilidad</p>
-          <p class="text-2xl font-bold text-blue-600">{{ (resumen.lighthouse.categories.accessibility.score * 100).toFixed(0) }} / 100</p>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow text-center">
-          <p class="text-lg font-semibold text-gray-800">Best Practices</p>
-          <p class="text-2xl font-bold text-blue-600">{{ (resumen.lighthouse.categories['best-practices'].score * 100).toFixed(0) }} / 100</p>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow text-center">
-          <p class="text-lg font-semibold text-gray-800">SEO</p>
-          <p class="text-2xl font-bold text-blue-600">{{ (resumen.lighthouse.categories.seo.score * 100).toFixed(0) }} / 100</p>
-        </div>
-        <div class="bg-white p-6 rounded-lg shadow text-center">
-          <p class="text-lg font-semibold text-gray-800">PWA</p>
-          <p class="text-2xl font-bold text-blue-600">{{ (resumen.lighthouse.categories.pwa.score * 100).toFixed(0) }} / 100</p>
+    <div v-if="resumen?.lighthouse?.categories" class="mt-8 p-6 bg-white rounded shadow-md animate-fadeIn">
+      <h2 class="text-2xl font-bold text-green-700 mb-6">📊 Resultados Lighthouse</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div
+          class="bg-white p-6 rounded-lg shadow text-center"
+          v-for="(cat, key) in lighthouseCategorias"
+          :key="key"
+        >
+          <p class="text-lg font-semibold text-gray-800">{{ cat.emoji }} {{ cat.nombre }}</p>
+          <p class="text-2xl font-bold text-blue-600">
+            {{ (resumen.lighthouse.categories[key]?.score * 100).toFixed(0) }} / 100
+          </p>
         </div>
       </div>
     </div>
@@ -73,6 +62,15 @@ const estado = ref('');
 const resumen = ref(null);
 const cargando = ref(false);
 
+// Configuración de nombres bonitos para Lighthouse
+const lighthouseCategorias = {
+  performance: { nombre: 'Performance', emoji: '⚡' },
+  accessibility: { nombre: 'Accesibilidad', emoji: '♿' },
+  'best-practices': { nombre: 'Best Practices', emoji: '🔐' },
+  seo: { nombre: 'SEO', emoji: '🔍' },
+  pwa: { nombre: 'PWA', emoji: '📱' },
+};
+
 const analizar = async () => {
   if (!url.value) {
     estado.value = '❗ Debes ingresar una URL válida.';
@@ -81,7 +79,6 @@ const analizar = async () => {
 
   cargando.value = true;
   estado.value = '🔎 Iniciando análisis...';
-
   resumen.value = null;
 
   try {
@@ -91,20 +88,56 @@ const analizar = async () => {
       body: JSON.stringify({ url: url.value })
     });
 
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error('❌ Error en backend:', errorText);
+      estado.value = `❌ Error backend: ${res.status} ${res.statusText}`;
+      cargando.value = false;
+      return;
+    }
+
     const data = await res.json();
     console.log('👉 Resultado recibido del backend:', data);
 
     if (data.success) {
-      resumen.value = data.summary;
+      resumen.value = data.resumen;
+      if (data.resumen?.testId) {
+        await obtenerLighthouseDesdeBackend(data.resumen.testId);
+      }
       estado.value = '✅ Análisis completado.';
     } else {
       estado.value = '❌ No se pudo generar el informe.';
     }
   } catch (err) {
-    console.error(err);
+    console.error('❌ Error en análisis:', err);
     estado.value = '❌ Error de conexión o servidor.';
   } finally {
     cargando.value = false;
+  }
+};
+
+const obtenerLighthouseDesdeBackend = async (testId) => {
+  try {
+    const res = await fetch(`/api/lighthouse/${testId}`);
+    if (!res.ok) {
+      console.error('❌ Error en /api/lighthouse/:testId:', res.status, res.statusText);
+      estado.value = `❌ Error obteniendo Lighthouse: ${res.status} ${res.statusText}`;
+      return;
+    }
+
+    const data = await res.json();
+    console.log('📦 Lighthouse recibido:', data);
+
+    if (data?.lighthouse?.categories) {
+      resumen.value.lighthouse = { categories: data.lighthouse.categories };
+      console.log('✅ Lighthouse integrado en resumen.');
+    } else {
+      console.warn('⚠️ Lighthouse inválido:', data);
+      estado.value = '⚠️ No se encontraron resultados de Lighthouse.';
+    }
+  } catch (err) {
+    console.error('❌ Error trayendo Lighthouse:', err);
+    estado.value = '❌ Error al obtener Lighthouse.';
   }
 };
 </script>
@@ -118,6 +151,7 @@ const analizar = async () => {
 .animate-fadeIn {
   animation: fadeIn 0.8s ease-out;
 }
+
 body {
   font-family: 'Source Serif Pro', serif;
 }
