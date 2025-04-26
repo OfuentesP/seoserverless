@@ -17,13 +17,13 @@
         {{ cargando ? 'Analizando...' : 'Analizar Sitio' }}
       </button>
 
-      <div v-if="estado" class="text-center mt-4 text-gray-700 font-medium">
+      <div v-if="estado" class="text-center mt-4 text-gray-700 font-medium mt-4">
         {{ estado }}
       </div>
 
       <div v-if="resumen" class="mt-8 p-6 bg-white rounded shadow-md">
-        <h2 class="text-xl font-bold mb-4 text-blue-800">✅ Resultados:</h2>
-        <p>⏱ <strong>Tiempo de carga:</strong> {{ resumen.loadTime }} ms</p>
+        <h2 class="text-xl font-bold mb-4 text-blue-800">✅ Resultados WebPageTest:</h2>
+        <p>⏱ <strong>Load Time:</strong> {{ resumen.loadTime }} ms</p>
         <p>⚡ <strong>Speed Index:</strong> {{ resumen.SpeedIndex }} ms</p>
         <p>📡 <strong>TTFB:</strong> {{ resumen.TTFB }} ms</p>
         <a
@@ -34,21 +34,38 @@
           Ver informe completo en WebPageTest
         </a>
       </div>
-    </div>
 
-    <div v-if="resumen?.lighthouse?.categories" class="mt-8 p-6 bg-white rounded shadow-md animate-fadeIn">
-      <h2 class="text-2xl font-bold text-green-700 mb-6">📊 Resultados Lighthouse</h2>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <div
-          class="bg-white p-6 rounded-lg shadow text-center"
-          v-for="(cat, key) in lighthouseCategorias"
-          :key="key"
-        >
-          <p class="text-lg font-semibold text-gray-800">{{ cat.emoji }} {{ cat.nombre }}</p>
-          <p class="text-2xl font-bold text-blue-600">
-            {{ (resumen.lighthouse.categories[key]?.score * 100).toFixed(0) }} / 100
-          </p>
+      <div v-if="lighthouse" class="mt-8 p-6 bg-white rounded shadow-md">
+        <h2 class="text-2xl font-bold text-green-700 mb-6">📊 Auditoría Lighthouse</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div v-for="(cat, key) in lighthouseCategorias" :key="key" class="bg-white p-6 rounded-lg shadow text-center">
+            <p class="text-lg font-semibold text-gray-800">{{ cat.emoji }} {{ cat.nombre }}</p>
+            <p v-if="lighthouse.categories && lighthouse.categories[key]" class="text-2xl font-bold text-blue-600">
+              {{ (lighthouse.categories[key].score * 100).toFixed(0) }} / 100
+            </p>
+            <p v-else class="text-gray-400">No disponible</p>
+          </div>
         </div>
+        
+        <div v-if="lighthouse.audits" class="mt-8">
+          <h3 class="text-xl font-bold text-blue-800 mb-4">Detalles de la auditoría</h3>
+          <div class="grid grid-cols-1 gap-4">
+            <div v-for="(audit, key) in lighthouse.audits" :key="key" class="p-4 border rounded">
+              <h4 class="font-bold">{{ audit.title }}</h4>
+              <p class="text-sm text-gray-600">{{ audit.description }}</p>
+              <p class="mt-2">
+                <span class="font-semibold">Puntuación:</span> 
+                <span :class="getScoreClass(audit.score)">
+                  {{ (audit.score * 100).toFixed(0) }} / 100
+                </span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="resumen" class="mt-8 text-center text-red-600">
+        ⚠️ No se pudo obtener el informe de Lighthouse.
       </div>
     </div>
   </div>
@@ -60,15 +77,21 @@ import { ref } from 'vue';
 const url = ref('');
 const estado = ref('');
 const resumen = ref(null);
+const lighthouse = ref(null);
 const cargando = ref(false);
 
-// Configuración de nombres bonitos para Lighthouse
 const lighthouseCategorias = {
   performance: { nombre: 'Performance', emoji: '⚡' },
   accessibility: { nombre: 'Accesibilidad', emoji: '♿' },
   'best-practices': { nombre: 'Best Practices', emoji: '🔐' },
   seo: { nombre: 'SEO', emoji: '🔍' },
   pwa: { nombre: 'PWA', emoji: '📱' },
+};
+
+const getScoreClass = (score) => {
+  if (score >= 0.9) return 'text-green-600 font-bold';
+  if (score >= 0.5) return 'text-yellow-600 font-bold';
+  return 'text-red-600 font-bold';
 };
 
 const analizar = async () => {
@@ -80,6 +103,7 @@ const analizar = async () => {
   cargando.value = true;
   estado.value = '🔎 Iniciando análisis...';
   resumen.value = null;
+  lighthouse.value = null;
 
   try {
     const res = await fetch('/api/run-test', {
@@ -97,13 +121,11 @@ const analizar = async () => {
     }
 
     const data = await res.json();
-    console.log('👉 Resultado recibido del backend:', data);
+    console.log('👉 Resultado recibido del backend (resumen):', data);
 
-    if (data.success) {
+    if (data.success && data.resumen?.testId) {
       resumen.value = data.resumen;
-      if (data.resumen?.testId) {
-        await obtenerLighthouseDesdeBackend(data.resumen.testId);
-      }
+      await obtenerLighthouseDesdeBackend(data.resumen.testId);
       estado.value = '✅ Análisis completado.';
     } else {
       estado.value = '❌ No se pudo generar el informe.';
@@ -118,26 +140,22 @@ const analizar = async () => {
 
 const obtenerLighthouseDesdeBackend = async (testId) => {
   try {
+    estado.value = '🔍 Obteniendo resultados de Lighthouse...';
     const res = await fetch(`/api/lighthouse/${testId}`);
-    if (!res.ok) {
-      console.error('❌ Error en /api/lighthouse/:testId:', res.status, res.statusText);
-      estado.value = `❌ Error obteniendo Lighthouse: ${res.status} ${res.statusText}`;
-      return;
-    }
-
     const data = await res.json();
     console.log('📦 Lighthouse recibido:', data);
 
-    if (data?.lighthouse?.categories) {
-      resumen.value.lighthouse = { categories: data.lighthouse.categories };
-      console.log('✅ Lighthouse integrado en resumen.');
+    if (data.lighthouse) {
+      lighthouse.value = data.lighthouse;
+      console.log('✅ Lighthouse cargado correctamente:', lighthouse.value);
+      estado.value = '✅ Análisis completado.';
     } else {
-      console.warn('⚠️ Lighthouse inválido:', data);
-      estado.value = '⚠️ No se encontraron resultados de Lighthouse.';
+      console.warn('⚠️ Lighthouse no disponible en la respuesta:', data);
+      estado.value = '⚠️ No se pudo obtener el informe de Lighthouse.';
     }
   } catch (err) {
     console.error('❌ Error trayendo Lighthouse:', err);
-    estado.value = '❌ Error al obtener Lighthouse.';
+    estado.value = '❌ Error al obtener datos de Lighthouse.';
   }
 };
 </script>
