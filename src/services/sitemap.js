@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { parseString } from 'xml2js';
 import { analyzeSitemapWithPlaywright } from './sitemapAnalyzer.js';
-import { analyzeSitemapWithGemini } from './gemini.js';
 
 // Cache para almacenar resultados de análisis
 const analysisCache = new Map();
@@ -141,21 +140,6 @@ export async function analyzeSitemap(url) {
     console.log(`[sitemap] 🔄 Procesando sitemap...`);
     const processedResult = await processSitemap(result, baseUrl);
     
-    // Analizar con Gemini
-    console.log(`[sitemap] 🔄 Analizando con Gemini...`);
-    try {
-      const geminiAnalysis = await analyzeSitemapWithGemini(processedResult);
-      processedResult.insights = geminiAnalysis;
-    } catch (geminiError) {
-      console.error(`[sitemap] ⚠️ Error al analizar con Gemini: ${geminiError.message}`);
-      processedResult.insights = {
-        summary: "No se pudo generar el análisis con IA debido a un error.",
-        problems: [],
-        recommendations: [],
-        actionItems: []
-      };
-    }
-    
     // Almacenar en caché
     cacheResult(url, processedResult);
     
@@ -169,21 +153,6 @@ export async function analyzeSitemap(url) {
     console.log(`[sitemap] 🔄 Intentando análisis con Playwright como fallback...`);
     try {
       const playwrightResult = await analyzeSitemapWithPlaywright(url);
-      
-      // Analizar con Gemini
-      console.log(`[sitemap] 🔄 Analizando resultados de Playwright con Gemini...`);
-      try {
-        const geminiAnalysis = await analyzeSitemapWithGemini(playwrightResult);
-        playwrightResult.insights = geminiAnalysis;
-      } catch (geminiError) {
-        console.error(`[sitemap] ⚠️ Error al analizar con Gemini: ${geminiError.message}`);
-        playwrightResult.insights = {
-          summary: "No se pudo generar el análisis con IA debido a un error.",
-          problems: [],
-          recommendations: [],
-          actionItems: []
-        };
-      }
       
       // Almacenar en caché
       cacheResult(url, playwrightResult);

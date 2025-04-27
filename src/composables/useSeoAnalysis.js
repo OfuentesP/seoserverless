@@ -19,7 +19,6 @@ export function useSeoAnalysis() {
     webpagetestUrl: null
   });
   const lighthouse = ref(null);
-  const geminiInsight = ref(null);
   const lighthouseCategorias = ref([]);
   const sitemapResults = ref(null);
 
@@ -45,7 +44,6 @@ export function useSeoAnalysis() {
     currentStep.value = 'Iniciando análisis...';
     resumen.value.error = null;
     url.value = inputUrl;
-    geminiInsight.value = null;
     sitemapResults.value = null;
     lighthouse.value = null;
     estado.value = '';
@@ -102,42 +100,21 @@ export function useSeoAnalysis() {
         sitemapResults.value = { error: sitemapError.message };
       }
 
-      progress.value = 80;
-      currentStep.value = 'Generando insights IA...';
-
-      // Step 4: Generate Insights with Gemini
-      try {
-        console.log(`[useSeoAnalysis] 🤖 Generando Insights IA...`);
-        const insightsResponse = await axios.post('/api/gemini/analyze', {
-          url: inputUrl,
-          webpagetest: webpagetestResults,
-          lighthouse: lighthouse.value,
-          sitemap: sitemapResults.value
-        });
-        geminiInsight.value = insightsResponse.data;
-        console.log(`[useSeoAnalysis] ✅ Insights IA generados:`, geminiInsight.value);
-      } catch (geminiError) {
-        console.error(`[useSeoAnalysis] ❌ Error generando Insights IA:`, extractErrorDetails(geminiError));
-        geminiInsight.value = { summary: 'Error generando insights.' };
-      }
-
       progress.value = 100;
       currentStep.value = 'Análisis completado';
       estado.value = '✅ Análisis completo';
 
-      // Step 5: Navigation and passing data
+      // Step 4: Navigation and passing data
       const finTimestamp = Date.now();
       console.log(`[useSeoAnalysis] 🕒 Fin análisis: ${new Date(finTimestamp).toISOString()}`);
       console.log(`[useSeoAnalysis] ⏱️ Tiempo total: ${((finTimestamp - inicioTimestamp) / 1000).toFixed(2)} segundos.`);
 
-      // ⚡ New: Redirect with router.push({ path, state })
       await nextTick();
 
       // Deep clone the reactive objects to remove the Proxy
       const resumenPlano = JSON.parse(JSON.stringify(resumen.value));
       const lighthousePlano = JSON.parse(JSON.stringify(lighthouse.value));
       const sitemapResultsPlano = JSON.parse(JSON.stringify(sitemapResults.value));
-      const geminiInsightPlano = JSON.parse(JSON.stringify(geminiInsight.value));
 
       // Use the router.push() with the cloned data
       router.push({
@@ -146,7 +123,6 @@ export function useSeoAnalysis() {
           resumen: resumenPlano,
           lighthouse: lighthousePlano,
           sitemapResults: sitemapResultsPlano,
-          geminiInsight: geminiInsightPlano,
           estado: estado.value
         }
       });
@@ -180,7 +156,6 @@ export function useSeoAnalysis() {
     estado,
     resumen,
     lighthouse,
-    geminiInsight,
     lighthouseCategorias,
     sitemapResults,
     isLoading,

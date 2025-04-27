@@ -6,7 +6,6 @@
     <EstadoMensaje :estado="estado" />
     <WebPageTestResults v-if="resumen" :resumen="resumen" />
     <LighthouseResults v-if="lighthouse" :lighthouse="lighthouse" :lighthouseCategorias="lighthouseCategorias" :getScoreClass="getScoreClass" />
-    <GeminiInsight v-if="lighthouse && geminiInsight" :insight="geminiInsight" />
     <div v-else-if="resumen" class="mt-8 text-center text-red-600">
       ⚠️ No se pudo obtener el informe de Lighthouse.
     </div>
@@ -19,7 +18,6 @@ import { useRouter } from 'vue-router';
 import UrlInput from '../components/UrlInput.vue';
 import WebPageTestResults from '../components/WebPageTestResults.vue';
 import LighthouseResults from '../components/LighthouseResults.vue';
-import GeminiInsight from '../components/GeminiInsight.vue';
 import EstadoMensaje from '../components/EstadoMensaje.vue';
 import useSeoAnalysis from '../composables/useSeoAnalysis';
 
@@ -30,7 +28,6 @@ const {
   resumen,
   lighthouse,
   cargando,
-  geminiInsight,
   lighthouseCategorias,
   getScoreClass,
   analizar

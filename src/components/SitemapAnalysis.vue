@@ -132,12 +132,6 @@
           </div>
         </div>
       </div>
-
-      <!-- Gemini Insights -->
-      <div v-if="sitemapResults.geminiInsights" class="mt-6">
-        <h3 class="text-lg font-semibold text-white mb-2">Análisis de IA</h3>
-        <GeminiInsights :geminiInsight="sitemapResults.geminiInsights" />
-      </div>
     </div>
 
     <div v-else class="text-center py-8">
@@ -147,13 +141,8 @@
 </template>
 
 <script>
-import GeminiInsights from './GeminiInsights.vue';
-
 export default {
   name: 'SitemapAnalysis',
-  components: {
-    GeminiInsights
-  },
   props: {
     sitemapResults: {
       type: Object,

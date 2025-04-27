@@ -50,12 +50,6 @@
           <li><strong>Última modificación:</strong> {{ sitemapResults.lastModified ?? 'N/A' }}</li>
         </ul>
       </section>
-
-      <!-- Sección Insights IA -->
-      <section class="mb-8">
-        <h2 class="text-2xl font-semibold mb-2">🤖 Insights IA (Gemini)</h2>
-        <p>{{ geminiInsight.summary ?? 'Sin insights.' }}</p>
-      </section>
     </div>
   </div>
 </template>

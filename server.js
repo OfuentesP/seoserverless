@@ -9,7 +9,6 @@ import cors from 'cors';
 
 // Importar servicios
 import { analyzeSitemap } from './src/services/sitemap.js';
-import { analyzeWithGemini } from './src/services/gemini.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -241,40 +240,6 @@ app.post('/api/sitemap/analyze', async (req, res) => {
   }
 });
 
-// ---------------- RUTA PARA ANALIZAR CON GEMINI ----------------
-app.post('/api/gemini/analyze', async (req, res) => {
-  try {
-    const { url, webpagetest, lighthouse, sitemap, testId } = req.body;
-    if (!url) {
-      console.error('❌ No se proporcionó URL.');
-      return res.status(400).json({ success: false, message: 'URL no proporcionada.' });
-    }
-    console.log('🌎 Analizando con Gemini para URL:', url, 'testId:', testId);
-    const insights = await analyzeWithGemini({
-      url,
-      webpagetest,
-      lighthouse,
-      sitemap
-    });
-    console.log('✅ Análisis con Gemini completado');
-    if (testId) {
-      if (!analysisStatus[testId]) analysisStatus[testId] = {};
-      analysisStatus[testId].geminiInsight = insights;
-      console.log(`[server] Gemini guardado en analysisStatus para testId: ${testId}`);
-    } else {
-      console.warn('[server] No se proporcionó testId al guardar geminiInsight');
-    }
-    res.json(insights);
-  } catch (error) {
-    console.error('❌ Error analizando con Gemini:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error analizando con Gemini.',
-      error: error.message
-    });
-  }
-});
-
 // --- Endpoint para consultar el estado de análisis por testId ---
 app.get('/api/seo/status/:testId', async (req, res) => {
   const { testId } = req.params;
@@ -286,7 +251,6 @@ app.get('/api/seo/status/:testId', async (req, res) => {
     resumen: null,
     lighthouse: null,
     sitemapResults: null,
-    geminiInsight: null
   };
   res.json(status);
 });

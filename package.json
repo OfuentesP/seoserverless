@@ -2,12 +2,15 @@
   "name": "seoserverless",
   "private": true,
   "version": "1.0.0",
+  "description": "Servicio de análisis SEO serverless",
+  "main": "src/index.js",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite\" \"nodemon server.js\"",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --experimental-modules src/test-performance.js"
   },
   "dependencies": {
     "axios": "^1.6.7",
