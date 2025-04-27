@@ -73,41 +73,68 @@ export function useSeoAnalysis() {
   }
 
   async function obtenerLighthouseDesdeBackend(testId) {
-    console.log('[useSeoAnalysis] Obteniendo resultados de Lighthouse para testId:', testId);
+    console.log('[useSeoAnalysis] 🚀 Iniciando obtención de Lighthouse para testId:', testId);
+    const startTime = performance.now();
+    
     try {
       estado.value = '🔍 Obteniendo resultados de Lighthouse...';
       const data = await getLighthouseResults(testId);
-      console.log('[useSeoAnalysis] Lighthouse recibido:', data);
+      const elapsedTime = ((performance.now() - startTime) / 1000).toFixed(2);
+      console.log(`[useSeoAnalysis] ⏱️ Tiempo transcurrido: ${elapsedTime}s`);
+      console.log('[useSeoAnalysis] 📊 Datos Lighthouse recibidos:', {
+        tieneAudits: !!data.lighthouse?.audits,
+        categorias: Object.keys(data.lighthouse?.categories || {}),
+        tamanioRespuesta: JSON.stringify(data).length
+      });
 
       if (data.lighthouse) {
         lighthouse.value = data.lighthouse;
 
-        // Extraer Core Web Vitals
+        // Extraer Core Web Vitals con más logging
         if (data.lighthouse.audits) {
+          console.log('[useSeoAnalysis] 🔍 Buscando métricas Core Web Vitals en audits...');
+          
           const lcp = data.lighthouse.audits['largest-contentful-paint']?.numericValue;
           const cls = data.lighthouse.audits['cumulative-layout-shift']?.numericValue;
           const tbt = data.lighthouse.audits['total-blocking-time']?.numericValue;
 
-          console.log('[useSeoAnalysis] Core Web Vitals extraídos:', { lcp, cls, tbt });
+          console.log('[useSeoAnalysis] ⚡ Core Web Vitals encontrados:', {
+            lcp: lcp ? `${(lcp/1000).toFixed(2)}s` : 'no disponible',
+            cls: cls ? cls.toFixed(3) : 'no disponible',
+            tbt: tbt ? `${(tbt/1000).toFixed(2)}s` : 'no disponible',
+            tiempoEspera: `${elapsedTime}s`
+          });
 
-          // Asignar Core Web Vitals al resumen
+          // Asignar Core Web Vitals al resumen con estado
           if (resumen.value) {
+            const prevValues = {
+              lcp: resumen.value.lcp,
+              cls: resumen.value.cls,
+              tbt: resumen.value.tbt
+            };
+            
             resumen.value.lcp = lcp;
             resumen.value.cls = cls;
             resumen.value.tbt = tbt;
+            resumen.value.webVitalsStatus = 'loaded';
 
-            // 🔥 Forzar actualización de Vue
+            // 🔥 Forzar actualización de Vue y logging de cambios
             resumen.value = { ...resumen.value };
-            console.log('[useSeoAnalysis] Core Web Vitals asignados al resumen:', resumen.value);
+            console.log('[useSeoAnalysis] 🔄 Actualización de Core Web Vitals:', {
+              previos: prevValues,
+              nuevos: { lcp, cls, tbt }
+            });
           } else {
-            console.warn('[useSeoAnalysis] No se pudo asignar Core Web Vitals: resumen es null');
+            console.warn('[useSeoAnalysis] ⚠️ No se pudo asignar Core Web Vitals: resumen es null');
           }
         } else {
-          console.warn('[useSeoAnalysis] No se encontraron audits en el informe de Lighthouse');
+          console.warn('[useSeoAnalysis] ⚠️ No se encontraron audits en el informe de Lighthouse');
+          if (resumen.value) {
+            resumen.value.webVitalsStatus = 'error';
+          }
         }
 
-        console.log('%c[DEBUG] Lighthouse completo:', 'color: blue; font-weight: bold;', JSON.stringify(lighthouse.value, null, 2));
-        estado.value = '✅ Análisis completado.';
+        estado.value = '✅ Análisis completado en ' + elapsedTime + 's';
         
         // Generar Insight IA
         try {
