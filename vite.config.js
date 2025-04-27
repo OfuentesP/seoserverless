@@ -7,14 +7,12 @@ export default defineConfig({
   plugins: [vue()],
   resolve: {
     alias: {
-      stream: 'stream-browserify',
-      buffer: 'buffer',
-      util: 'util',
-      process: 'process/browser',
-      events: 'events',
-      timers: 'timers-browserify',
       '@': resolve(__dirname, 'src'),
     }
+  },
+  define: {
+    'process.env': {},
+    global: 'globalThis',
   },
   build: {
     target: 'esnext',
@@ -23,18 +21,37 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: undefined
-      }
+      },
+      external: [
+        'playwright',
+        'puppeteer',
+        'sitemap',
+        'sitemap-validator',
+        'xml2js',
+        'webpagetest',
+        'stream',
+        'util',
+        'buffer',
+        'events',
+        'timers',
+        'process'
+      ]
     }
   },
   optimizeDeps: {
-    include: [
-      'buffer',
-      'process',
-      'events',
-      'stream-browserify',
-      'util',
-      'timers-browserify'
-    ]
+    exclude: [
+      'playwright',
+      'puppeteer',
+      'sitemap',
+      'sitemap-validator',
+      'xml2js',
+      'webpagetest'
+    ],
+    esbuildOptions: {
+      define: {
+        global: 'globalThis'
+      }
+    }
   },
   server: {
     host: true,
@@ -45,7 +62,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:3000', // 🔥 corregido a 3000
+        target: 'http://localhost:3000',
         changeOrigin: true,
         secure: false,
       }

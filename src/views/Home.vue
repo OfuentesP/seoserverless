@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex flex-col items-center justify-center p-8 bg-gray-50">
+  <div class="min-h-screen flex flex-col items-center justify-center p-8 bg-dark-50">
     <h1 class="text-3xl font-bold mb-6">🔍 SEO20 WebPageTest</h1>
 
     <UrlInput :url="url" :loading="cargando" @analizar="handleAnalizar" />
@@ -21,7 +21,7 @@ import WebPageTestResults from '../components/WebPageTestResults.vue';
 import LighthouseResults from '../components/LighthouseResults.vue';
 import GeminiInsight from '../components/GeminiInsight.vue';
 import EstadoMensaje from '../components/EstadoMensaje.vue';
-import { seoAnalysis } from '../composables/useSeoAnalysis';
+import useSeoAnalysis from '../composables/useSeoAnalysis';
 
 const router = useRouter();
 const {
@@ -34,13 +34,13 @@ const {
   lighthouseCategorias,
   getScoreClass,
   analizar
-} = seoAnalysis;
+} = useSeoAnalysis();
 
 function handleAnalizar(inputUrl) {
   router.push('/cargando');
   setTimeout(() => {
     analizar(inputUrl);
-  }, 100); // Pequeño delay para asegurar el cambio de ruta
+  }, 100);
 }
 
 watch(estado, (nuevoEstado) => {

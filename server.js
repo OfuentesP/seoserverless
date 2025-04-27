@@ -5,17 +5,27 @@ import express from 'express';
 import path from 'path';
 import fetch from 'node-fetch';
 import webPageTest from 'webpagetest';
+import cors from 'cors';
+
+// Importar servicios
+import { analyzeSitemap } from './src/services/sitemap.js';
+import { analyzeWithGemini } from './src/services/gemini.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const wpt = webPageTest('www.webpagetest.org', process.env.WPT_API_KEY);
 
-app.use(express.json());
-app.use(express.static(path.join(process.cwd(), 'dist')));
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+// app.use(express.static(path.join(process.cwd(), 'dist')));
+
+// --- Almacenamiento temporal en memoria para resultados por testId ---
+const analysisStatus = {};
 
 // ---------------- RUTA PARA INICIAR TEST ----------------
-app.post('/api/run-test', async (req, res) => {
+app.post('/api/webpagetest/run', async (req, res) => {
   try {
     const { url } = req.body;
     if (!url) {
@@ -51,12 +61,12 @@ app.post('/api/run-test', async (req, res) => {
 
     res.json({
       success: true,
+      testId: testId,
       resumen: {
         loadTime: null,
         SpeedIndex: null,
         TTFB: null,
         detalles: resultUrl,
-        testId: testId,
       }
     });
 
@@ -66,8 +76,8 @@ app.post('/api/run-test', async (req, res) => {
   }
 });
 
-// ---------------- RUTA PARA ESPERAR RESULTADOS Y LIGHTHOUSE ----------------
-app.get('/api/lighthouse/:testId', async (req, res) => {
+// ---------------- RUTA PARA OBTENER RESULTADOS DE WEBPAGETEST ----------------
+app.get('/api/webpagetest/results/:testId', async (req, res) => {
   try {
     const { testId } = req.params;
     if (!testId) {
@@ -76,7 +86,6 @@ app.get('/api/lighthouse/:testId', async (req, res) => {
     }
 
     const resultUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}`;
-    const lighthouseUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}&lighthouse=1`;
 
     console.log('🌐 Verificando estado de test en:', resultUrl);
 
@@ -113,7 +122,28 @@ app.get('/api/lighthouse/:testId', async (req, res) => {
       testId: testId,
     };
 
+    // Guarda el resumen en analysisStatus
+    if (!analysisStatus[testId]) analysisStatus[testId] = {};
+    analysisStatus[testId].resumen = resumen;
     console.log('📋 Resumen WebPageTest:', resumen);
+    res.json(resumen);
+
+  } catch (error) {
+    console.error('❌ Error inesperado trayendo resultados:', error);
+    res.status(500).json({ success: false, message: 'Error trayendo resultados.' });
+  }
+});
+
+// ---------------- RUTA PARA OBTENER RESULTADOS DE LIGHTHOUSE ----------------
+app.get('/api/lighthouse/results/:testId', async (req, res) => {
+  try {
+    const { testId } = req.params;
+    if (!testId) {
+      console.error('❌ No se proporcionó testId.');
+      return res.status(400).json({ success: false, message: 'Test ID faltante.' });
+    }
+
+    const lighthouseUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}&lighthouse=1`;
 
     // 🔄 Ahora intentamos obtener los datos de Lighthouse
     console.log('🌟 Consultando informe Lighthouse en:', lighthouseUrl);
@@ -145,6 +175,7 @@ app.get('/api/lighthouse/:testId', async (req, res) => {
 
     if (!lighthouseData) {
       console.warn('⚠️ No se pudo obtener Lighthouse.');
+      return res.status(500).json({ success: false, message: 'No se pudo obtener Lighthouse.' });
     } else {
       // Asegurarse de que la estructura de Lighthouse sea consistente
       if (!lighthouseData.categories && lighthouseData.audits) {
@@ -170,12 +201,94 @@ app.get('/api/lighthouse/:testId', async (req, res) => {
       }
     }
 
-    res.json({ resumen, lighthouse: lighthouseData });
+    // Guarda el resultado en analysisStatus
+    if (!analysisStatus[testId]) analysisStatus[testId] = {};
+    analysisStatus[testId].lighthouse = lighthouseData;
+    res.json(lighthouseData);
 
   } catch (error) {
-    console.error('❌ Error inesperado trayendo resultados:', error);
-    res.status(500).json({ success: false, message: 'Error trayendo resultados.' });
+    console.error('❌ Error inesperado trayendo resultados de Lighthouse:', error);
+    res.status(500).json({ success: false, message: 'Error trayendo resultados de Lighthouse.' });
   }
+});
+
+// ---------------- RUTA PARA ANALIZAR SITEMAP ----------------
+app.post('/api/sitemap/analyze', async (req, res) => {
+  try {
+    const { url, testId } = req.body;
+    if (!url) {
+      console.error('❌ No se proporcionó URL.');
+      return res.status(400).json({ success: false, message: 'URL no proporcionada.' });
+    }
+    console.log('🌎 Analizando sitemap para URL:', url, 'testId:', testId);
+    const sitemapResults = await analyzeSitemap(url);
+    console.log('✅ Análisis de sitemap completado');
+    if (testId) {
+      if (!analysisStatus[testId]) analysisStatus[testId] = {};
+      analysisStatus[testId].sitemapResults = sitemapResults;
+      console.log(`[server] Sitemap guardado en analysisStatus para testId: ${testId}`);
+    } else {
+      console.warn('[server] No se proporcionó testId al guardar sitemapResults');
+    }
+    res.json(sitemapResults);
+  } catch (error) {
+    console.error('❌ Error analizando sitemap:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error analizando sitemap.',
+      error: error.message
+    });
+  }
+});
+
+// ---------------- RUTA PARA ANALIZAR CON GEMINI ----------------
+app.post('/api/gemini/analyze', async (req, res) => {
+  try {
+    const { url, webpagetest, lighthouse, sitemap, testId } = req.body;
+    if (!url) {
+      console.error('❌ No se proporcionó URL.');
+      return res.status(400).json({ success: false, message: 'URL no proporcionada.' });
+    }
+    console.log('🌎 Analizando con Gemini para URL:', url, 'testId:', testId);
+    const insights = await analyzeWithGemini({
+      url,
+      webpagetest,
+      lighthouse,
+      sitemap
+    });
+    console.log('✅ Análisis con Gemini completado');
+    if (testId) {
+      if (!analysisStatus[testId]) analysisStatus[testId] = {};
+      analysisStatus[testId].geminiInsight = insights;
+      console.log(`[server] Gemini guardado en analysisStatus para testId: ${testId}`);
+    } else {
+      console.warn('[server] No se proporcionó testId al guardar geminiInsight');
+    }
+    res.json(insights);
+  } catch (error) {
+    console.error('❌ Error analizando con Gemini:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error analizando con Gemini.',
+      error: error.message
+    });
+  }
+});
+
+// --- Endpoint para consultar el estado de análisis por testId ---
+app.get('/api/seo/status/:testId', async (req, res) => {
+  const { testId } = req.params;
+  if (!testId) {
+    return res.status(400).json({ success: false, message: 'Test ID faltante.' });
+  }
+  // Devuelve el estado y los datos si existen
+  const status = analysisStatus[testId] || {
+    resumen: null,
+    lighthouse: null,
+    sitemapResults: null,
+    geminiInsight: null
+  };
+  res.json(status);
 });
 
 // ---------------- CATCH-ALL PARA FRONTEND ----------------

@@ -1,159 +1,178 @@
-import { ref } from 'vue';
-import { analyzeLighthouseWithGemini } from '../services/gemini';
-import { runWebPageTest, getLighthouseResults } from '../services/seoApi';
+import { ref, computed, nextTick } from 'vue';
+import { useRouter } from 'vue-router';
+import axios from 'axios';
 
 export function useSeoAnalysis() {
+  const router = useRouter();
+  
+  // Define all the reactive variables to store data
   const url = ref('');
   const estado = ref('');
-  const resumen = ref(null);
+  const resumen = ref({
+    lcp: null,
+    cls: null,
+    tbt: null,
+    fcp: null,
+    si: null,
+    ttfb: null,
+    loadTime: null,
+    webpagetestUrl: null
+  });
   const lighthouse = ref(null);
-  const cargando = ref(false);
-  const geminiInsight = ref('');
+  const geminiInsight = ref(null);
+  const lighthouseCategorias = ref([]);
+  const sitemapResults = ref(null);
 
-  const lighthouseCategorias = {
-    performance: { nombre: 'Performance', emoji: '⚡' },
-    accessibility: { nombre: 'Accesibilidad', emoji: '♿' },
-    'best-practices': { nombre: 'Best Practices', emoji: '🔐' },
-    seo: { nombre: 'SEO', emoji: '🔍' },
-    pwa: { nombre: 'PWA', emoji: '📱' },
-  };
+  // Progress tracking variables
+  const isLoading = ref(false);
+  const progress = ref(0);
+  const currentStep = ref('');
 
-  const getScoreClass = (score) => {
-    if (score >= 0.9) return 'text-green-600 font-bold';
-    if (score >= 0.5) return 'text-yellow-600 font-bold';
-    return 'text-red-600 font-bold';
-  };
+  // Computed values for checking errors
+  const hasError = computed(() => resumen.value.error !== null);
+  const errorMessage = computed(() => resumen.value.error?.message || 'Error desconocido');
 
+  let inicioTimestamp = null;
+
+  // The function that handles the analysis of the SEO data
   async function analizar(inputUrl) {
-    console.log('[useSeoAnalysis] Iniciando análisis para:', inputUrl);
-    if (!inputUrl) {
-      estado.value = '❗ Debes ingresar una URL válida.';
-      console.warn('[useSeoAnalysis] URL vacía');
-      return;
-    }
+    console.log(`[useSeoAnalysis] 🚀 Iniciando análisis para: ${inputUrl}`);
+    inicioTimestamp = Date.now();
+    console.log(`[useSeoAnalysis] ⏱️ Inicio análisis: ${new Date(inicioTimestamp).toISOString()}`);
+
+    isLoading.value = true;
+    progress.value = 0;
+    currentStep.value = 'Iniciando análisis...';
+    resumen.value.error = null;
     url.value = inputUrl;
-    cargando.value = true;
-    estado.value = '🔎 Iniciando análisis...';
-    resumen.value = null;
+    geminiInsight.value = null;
+    sitemapResults.value = null;
     lighthouse.value = null;
+    estado.value = '';
 
     try {
-      const data = await runWebPageTest(url.value);
-      console.log('[useSeoAnalysis] Resultado recibido del backend (resumen):', data);
+      // Step 1: WebPageTest Analysis
+      console.log(`[useSeoAnalysis] 📊 Ejecutando WebPageTest...`);
+      const testResponse = await axios.post('/api/webpagetest/run', { url: inputUrl });
+      const testId = testResponse.data.testId;
+      console.log(`[useSeoAnalysis] ✅ WebPageTest iniciado. ID: ${testId}`);
 
-      if (data.success && data.resumen?.testId) {
-        resumen.value = data.resumen;
+      progress.value = 20;
+      currentStep.value = 'Obteniendo resultados de WebPageTest...';
 
-        // 🔥 Arreglo pro: asegurar campos básicos
-        if (resumen.value) {
-          resumen.value.url = resumen.value.url || url.value;
-          resumen.value.loadTime = resumen.value.loadTime || 0;
-          resumen.value.totalSize = resumen.value.totalSize || 0;
-          resumen.value.requests = resumen.value.requests || 0;
+      const webpagetestResponse = await axios.get(`/api/webpagetest/results/${testId}`);
+      const webpagetestResults = webpagetestResponse.data;
+      console.log(`[useSeoAnalysis] ✅ WebPageTest resultados:`, webpagetestResults);
+
+      progress.value = 40;
+      currentStep.value = 'Obteniendo resultados de Lighthouse...';
+
+      // Step 2: Lighthouse Results
+      const lighthouseResponse = await axios.get(`/api/lighthouse/results/${testId}`);
+      lighthouse.value = lighthouseResponse.data;
+      console.log(`[useSeoAnalysis] ✅ Lighthouse resultados:`, lighthouse.value);
+
+      const metrics = lighthouse.value?.audits || {};
+      resumen.value = {
+        url: webpagetestResults.url || webpagetestResults.testUrl || null,
+        lcp: metrics['largest-contentful-paint']?.numericValue ?? null,
+        cls: metrics['cumulative-layout-shift']?.numericValue ?? null,
+        tbt: metrics['total-blocking-time']?.numericValue ?? null,
+        fcp: metrics['first-contentful-paint']?.numericValue ?? null,
+        si: metrics['speed-index']?.numericValue ?? null,
+        ttfb: webpagetestResults.TTFB ?? null,
+        loadTime: webpagetestResults.loadTime ?? null,
+        webpagetestUrl: webpagetestResults.detalles ?? null,
+        totalSize: webpagetestResults.totalSize ?? null,
+        requests: webpagetestResults.requests ?? null
+      };
+      console.log(`[useSeoAnalysis] 📈 Core Web Vitals extraídos:`, resumen.value);
+
+      estado.value = '✅ WebPageTest y Lighthouse OK';
+      progress.value = 60;
+
+      // Step 3: Sitemap Analysis
+      console.log(`[useSeoAnalysis] 📊 Analizando Sitemap...`);
+      try {
+        const sitemapResponse = await axios.post('/api/sitemap/analyze', { url: inputUrl });
+        sitemapResults.value = sitemapResponse.data;
+        console.log(`[useSeoAnalysis] ✅ Sitemap resultados:`, sitemapResults.value);
+      } catch (sitemapError) {
+        console.error(`[useSeoAnalysis] ❌ Error analizando Sitemap:`, extractErrorDetails(sitemapError));
+        sitemapResults.value = { error: sitemapError.message };
+      }
+
+      progress.value = 80;
+      currentStep.value = 'Generando insights IA...';
+
+      // Step 4: Generate Insights with Gemini
+      try {
+        console.log(`[useSeoAnalysis] 🤖 Generando Insights IA...`);
+        const insightsResponse = await axios.post('/api/gemini/analyze', {
+          url: inputUrl,
+          webpagetest: webpagetestResults,
+          lighthouse: lighthouse.value,
+          sitemap: sitemapResults.value
+        });
+        geminiInsight.value = insightsResponse.data;
+        console.log(`[useSeoAnalysis] ✅ Insights IA generados:`, geminiInsight.value);
+      } catch (geminiError) {
+        console.error(`[useSeoAnalysis] ❌ Error generando Insights IA:`, extractErrorDetails(geminiError));
+        geminiInsight.value = { summary: 'Error generando insights.' };
+      }
+
+      progress.value = 100;
+      currentStep.value = 'Análisis completado';
+      estado.value = '✅ Análisis completo';
+
+      // Step 5: Navigation and passing data
+      const finTimestamp = Date.now();
+      console.log(`[useSeoAnalysis] 🕒 Fin análisis: ${new Date(finTimestamp).toISOString()}`);
+      console.log(`[useSeoAnalysis] ⏱️ Tiempo total: ${((finTimestamp - inicioTimestamp) / 1000).toFixed(2)} segundos.`);
+
+      // ⚡ New: Redirect with router.push({ path, state })
+      await nextTick();
+
+      // Deep clone the reactive objects to remove the Proxy
+      const resumenPlano = JSON.parse(JSON.stringify(resumen.value));
+      const lighthousePlano = JSON.parse(JSON.stringify(lighthouse.value));
+      const sitemapResultsPlano = JSON.parse(JSON.stringify(sitemapResults.value));
+      const geminiInsightPlano = JSON.parse(JSON.stringify(geminiInsight.value));
+
+      // Use the router.push() with the cloned data
+      router.push({
+        path: '/resultados',
+        state: {
+          resumen: resumenPlano,
+          lighthouse: lighthousePlano,
+          sitemapResults: sitemapResultsPlano,
+          geminiInsight: geminiInsightPlano,
+          estado: estado.value
         }
+      });
 
-        console.log('%c[DEBUG] Resumen corregido:', 'color: green; font-weight: bold;', JSON.stringify(resumen.value, null, 2));
-        await obtenerLighthouseDesdeBackend(data.resumen.testId);
-        estado.value = '✅ Análisis completado.';
-      } else {
-        estado.value = '❌ No se pudo generar el informe.';
-        console.warn('[useSeoAnalysis] No se pudo generar el informe:', data);
-      }
-    } catch (err) {
-      console.error('[useSeoAnalysis] Error en análisis:', err);
-      if (err instanceof TypeError && err.message.includes('NetworkError')) {
-        estado.value = '❌ Error de red. Verifica tu conexión o intenta más tarde.';
-      } else {
-        estado.value = err.message || '❌ Error de conexión o servidor.';
-      }
+    } catch (error) {
+      console.error(`[useSeoAnalysis] ❌ Error global:`, extractErrorDetails(error));
+      resumen.value.error = {
+        message: 'Error en el análisis: ' + error.message,
+        details: error.stack
+      };
+      currentStep.value = 'Error en el análisis';
+      progress.value = 0;
+      estado.value = '❌ Error global en análisis';
     } finally {
-      cargando.value = false;
-      console.log('[useSeoAnalysis] Análisis finalizado. Estado:', estado.value);
+      isLoading.value = false;
     }
   }
 
-  async function obtenerLighthouseDesdeBackend(testId) {
-    console.log('[useSeoAnalysis] 🚀 Iniciando obtención de Lighthouse para testId:', testId);
-    const startTime = performance.now();
-    
-    try {
-      estado.value = '🔍 Obteniendo resultados de Lighthouse...';
-      const data = await getLighthouseResults(testId);
-      const elapsedTime = ((performance.now() - startTime) / 1000).toFixed(2);
-      console.log(`[useSeoAnalysis] ⏱️ Tiempo transcurrido: ${elapsedTime}s`);
-      console.log('[useSeoAnalysis] 📊 Datos Lighthouse recibidos:', {
-        tieneAudits: !!data.lighthouse?.audits,
-        categorias: Object.keys(data.lighthouse?.categories || {}),
-        tamanioRespuesta: JSON.stringify(data).length
-      });
-
-      if (data.lighthouse) {
-        lighthouse.value = data.lighthouse;
-
-        // Extraer Core Web Vitals con más logging
-        if (data.lighthouse.audits) {
-          console.log('[useSeoAnalysis] 🔍 Buscando métricas Core Web Vitals en audits...');
-          
-          const lcp = data.lighthouse.audits['largest-contentful-paint']?.numericValue;
-          const cls = data.lighthouse.audits['cumulative-layout-shift']?.numericValue;
-          const tbt = data.lighthouse.audits['total-blocking-time']?.numericValue;
-
-          console.log('[useSeoAnalysis] ⚡ Core Web Vitals encontrados:', {
-            lcp: lcp ? `${(lcp/1000).toFixed(2)}s` : 'no disponible',
-            cls: cls ? cls.toFixed(3) : 'no disponible',
-            tbt: tbt ? `${(tbt/1000).toFixed(2)}s` : 'no disponible',
-            tiempoEspera: `${elapsedTime}s`
-          });
-
-          // Asignar Core Web Vitals al resumen con estado
-          if (resumen.value) {
-            const prevValues = {
-              lcp: resumen.value.lcp,
-              cls: resumen.value.cls,
-              tbt: resumen.value.tbt
-            };
-            
-            resumen.value.lcp = lcp;
-            resumen.value.cls = cls;
-            resumen.value.tbt = tbt;
-            resumen.value.webVitalsStatus = 'loaded';
-
-            // 🔥 Forzar actualización de Vue y logging de cambios
-            resumen.value = { ...resumen.value };
-            console.log('[useSeoAnalysis] 🔄 Actualización de Core Web Vitals:', {
-              previos: prevValues,
-              nuevos: { lcp, cls, tbt }
-            });
-          } else {
-            console.warn('[useSeoAnalysis] ⚠️ No se pudo asignar Core Web Vitals: resumen es null');
-          }
-        } else {
-          console.warn('[useSeoAnalysis] ⚠️ No se encontraron audits en el informe de Lighthouse');
-          if (resumen.value) {
-            resumen.value.webVitalsStatus = 'error';
-          }
-        }
-
-        estado.value = '✅ Análisis completado en ' + elapsedTime + 's';
-        
-        // Generar Insight IA
-        try {
-          geminiInsight.value = '⏳ Analizando con IA...';
-          const aiText = await analyzeLighthouseWithGemini(data.lighthouse, url.value);
-          geminiInsight.value = aiText;
-          console.log('[useSeoAnalysis] Insight IA generado.');
-        } catch (e) {
-          geminiInsight.value = 'No se pudo generar el insight con IA.';
-          console.error('[useSeoAnalysis] Error generando insight IA:', e);
-        }
-      } else {
-        console.warn('[useSeoAnalysis] Lighthouse no disponible en la respuesta:', data);
-        estado.value = '⚠️ No se pudo obtener el informe de Lighthouse.';
-      }
-    } catch (err) {
-      console.error('[useSeoAnalysis] Error trayendo Lighthouse:', err);
-      estado.value = err.message || '❌ Error al obtener datos de Lighthouse.';
-    }
+  // Function to extract error details for debugging
+  function extractErrorDetails(error) {
+    return {
+      message: error.message,
+      status: error.response?.status,
+      response: error.response?.data,
+      requestURL: error.config?.url
+    };
   }
 
   return {
@@ -161,12 +180,16 @@ export function useSeoAnalysis() {
     estado,
     resumen,
     lighthouse,
-    cargando,
     geminiInsight,
     lighthouseCategorias,
-    getScoreClass,
+    sitemapResults,
+    isLoading,
+    progress,
+    currentStep,
+    hasError,
+    errorMessage,
     analizar
   };
 }
 
-export const seoAnalysis = useSeoAnalysis();
+export default useSeoAnalysis;
