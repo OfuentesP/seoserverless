@@ -22,7 +22,7 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // --- Almacenamiento temporal en memoria para resultados por testId ---
 const analysisStatus = {};
-
+ 
 // ---------------- RUTA PARA INICIAR TEST ----------------
 app.post('/api/webpagetest/run', async (req, res) => {
   try {
