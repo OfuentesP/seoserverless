@@ -57,9 +57,26 @@ export function useSeoAnalysis() {
 
       progress.value = 20;
       currentStep.value = 'Obteniendo resultados de WebPageTest...';
+      estado.value = '⏳ Esperando resultados de WebPageTest...';
 
-      const webpagetestResponse = await axios.get(`/api/webpagetest/results/${testId}`);
-      const webpagetestResults = webpagetestResponse.data;
+      // Polling para resultados
+      let webpagetestResults = null;
+      let pollingAttempts = 0;
+      const maxPollingAttempts = 60; // 5 minutos si el intervalo es 5s
+      while (pollingAttempts < maxPollingAttempts) {
+        const response = await axios.get(`/api/webpagetest/results/${testId}`);
+        if (response.data.status === 'complete') {
+          webpagetestResults = response.data.resumen;
+          break;
+        } else {
+          estado.value = '⏳ WebPageTest en proceso...';
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          pollingAttempts++;
+        }
+      }
+      if (!webpagetestResults) {
+        throw new Error('Timeout esperando resultados de WebPageTest');
+      }
       console.log(`[useSeoAnalysis] ✅ WebPageTest resultados:`, webpagetestResults);
 
       progress.value = 40;
