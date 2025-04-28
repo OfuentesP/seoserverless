@@ -24,19 +24,19 @@ watch(() => estado.value, (nuevoEstado) => {
 </script>
 
 <template>
-  <div class="flex flex-col items-center justify-center min-h-screen bg-dark-100">
+  <div class="flex flex-col items-center justify-center min-h-screen bg-gray-950">
     <div class="text-center">
-      <h1 class="text-3xl font-bold mb-4">Procesando análisis...</h1>
-      <p class="text-lg mb-8">{{ estado }}</p>
-      <div class="loader ease-linear rounded-full border-8 border-t-8 border-gray-200 h-32 w-32 mb-4"></div>
-      <p class="text-gray-600">Por favor espera un momento 🚀</p>
+      <h1 class="text-4xl font-bold mb-4 text-white tracking-tight">Procesando análisis...</h1>
+      <p class="text-lg mb-8 text-gray-300">{{ estado }}</p>
+      <div class="loader ease-linear rounded-full border-8 border-t-8 border-gray-800 h-32 w-32 mb-4"></div>
+      <p class="text-gray-400">Por favor espera un momento 🚀</p>
     </div>
   </div>
 </template>
 
 <style scoped>
 .loader {
-  border-top-color: #3498db;
+  border-top-color: #3b82f6;
   animation: spin 1s infinite linear;
 }
 
