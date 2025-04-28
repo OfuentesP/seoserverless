@@ -4,11 +4,9 @@
 
     <UrlInput :url="url" :loading="cargando" @analizar="handleAnalizar" />
     <EstadoMensaje :estado="estado" />
-    <WebPageTestResults v-if="resumen" :resumen="resumen" />
+    <WebPageTestSummary v-if="resumen" :resumen="resumen" />
     <LighthouseResults v-if="lighthouse" :lighthouse="lighthouse" :lighthouseCategorias="lighthouseCategorias" :getScoreClass="getScoreClass" />
-    <div v-else-if="resumen" class="mt-8 text-center text-red-600">
-      ⚠️ No se pudo obtener el informe de Lighthouse.
-    </div>
+  
   </div>
 </template>
 
@@ -16,7 +14,7 @@
 import { watch } from 'vue';
 import { useRouter } from 'vue-router';
 import UrlInput from '../components/UrlInput.vue';
-import WebPageTestResults from '../components/WebPageTestResults.vue';
+import WebPageTestSummary from '../components/WebPageTestSummary.vue';
 import LighthouseResults from '../components/LighthouseResults.vue';
 import EstadoMensaje from '../components/EstadoMensaje.vue';
 import useSeoAnalysis from '../composables/useSeoAnalysis';

@@ -7,9 +7,7 @@
     <WebPageTestResults v-if="resumen" :resumen="resumen" />
     <LighthouseResults v-if="lighthouse" :lighthouse="lighthouse" :lighthouseCategorias="lighthouseCategorias" :getScoreClass="getScoreClass" />
     <GeminiInsight v-if="lighthouse && geminiInsight" :insight="geminiInsight" />
-    <div v-else-if="resumen" class="mt-8 text-center text-red-600">
-      ⚠️ No se pudo obtener el informe de Lighthouse.
-    </div>
+
   </div>
 </template>
 
