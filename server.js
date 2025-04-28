@@ -85,48 +85,42 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
     }
 
     const resultUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}`;
+    const response = await fetch(resultUrl);
+    const contentType = response.headers.get("content-type");
 
-    console.log('🌐 Verificando estado de test en:', resultUrl);
-
-    let retries = 24; // Hasta 2 minutos
-    let resultData;
-
-    // 🔄 Primero esperar que el test WebPageTest esté listo
-    while (retries > 0) {
-      const response = await fetch(resultUrl);
-      resultData = await response.json();
+    if (contentType && contentType.includes("application/json")) {
+      const resultData = await response.json();
 
       if (resultData.statusCode === 200 && resultData.data?.runs) {
-        console.log('✅ WebPageTest finalizado.');
-        break;
+        const firstView = resultData.data.runs['1'].firstView;
+        const resumen = {
+          url: resultData.data.testUrl || null,
+          loadTime: firstView?.loadTime || null,
+          SpeedIndex: firstView?.SpeedIndex || null,
+          TTFB: firstView?.TTFB || null,
+          totalSize: firstView?.bytesIn || null,
+          requests: firstView?.requests || null,
+          lcp: firstView?.largestContentfulPaint || null,
+          cls: firstView?.cumulativeLayoutShift || null,
+          tbt: firstView?.totalBlockingTime || null,
+          detalles: resultData.data.summary,
+          testId: testId,
+        };
+        if (!analysisStatus[testId]) analysisStatus[testId] = {};
+        analysisStatus[testId].resumen = resumen;
+        return res.status(200).json({ status: 'complete', resumen });
+      } else if (resultData.statusCode === 100) {
+        // El test sigue corriendo
+        return res.status(200).json({ status: 'pending', message: 'El test sigue en proceso.' });
       } else {
-        console.log(`⏳ Test en progreso: ${resultData.statusText} (${retries} intentos restantes)`);
-        retries--;
-        await new Promise(resolve => setTimeout(resolve, 5000)); // 5 segundos
+        console.error('❌ Estado inesperado WebPageTest:', resultData.statusText || resultData.statusCode);
+        return res.status(500).json({ success: false, message: 'Error en los resultados del test.' });
       }
+    } else {
+      const text = await response.text();
+      console.error('❌ Respuesta inesperada (no JSON):', text.slice(0, 200));
+      return res.status(202).json({ status: 'pending', message: 'Resultados aún no disponibles.' });
     }
-
-    if (!resultData || resultData.statusCode !== 200) {
-      console.error('❌ Test no completado tras esperar.');
-      return res.status(500).json({ success: false, message: 'El test no finalizó.' });
-    }
-
-    const firstView = resultData.data.runs['1'].firstView;
-
-    const resumen = {
-      loadTime: firstView.loadTime,
-      SpeedIndex: firstView.SpeedIndex,
-      TTFB: firstView.TTFB,
-      detalles: resultData.data.summary,
-      testId: testId,
-    };
-
-    // Guarda el resumen en analysisStatus
-    if (!analysisStatus[testId]) analysisStatus[testId] = {};
-    analysisStatus[testId].resumen = resumen;
-    console.log('📋 Resumen WebPageTest:', resumen);
-    res.json(resumen);
-
   } catch (error) {
     console.error('❌ Error inesperado trayendo resultados:', error);
     res.status(500).json({ success: false, message: 'Error trayendo resultados.' });
