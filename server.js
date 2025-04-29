@@ -1,30 +1,35 @@
-import dotenv from 'dotenv';
-dotenv.config(); // Primero cargar variables de entorno
+import 'dotenv/config'; // <-- Esto permite que lea el .env
 
 import express from 'express';
 import path from 'path';
 import fetch from 'node-fetch';
-import webPageTest from 'webpagetest';
+import WebPageTest from 'webpagetest';
 import cors from 'cors';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { v4 as uuidv4 } from 'uuid';
+import bodyParser from 'body-parser';
 
 // Importar servicios
 import { analyzeSitemap } from './src/services/sitemap.js';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// Configuración de rutas y directorios
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Configuración de WebPageTest
-const wpt = webPageTest('www.webpagetest.org', process.env.WPT_API_KEY);
+const wpt = new WebPageTest('www.webpagetest.org', {
+  apiKey: process.env.WPT_API_KEY
+});
 
 // Configuración de logs
-const logDir = './logs';
+const logDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir);
 }
 
-const logStream = fs.createWriteStream(`${logDir}/app.log`, { flags: 'a' });
-const errorStream = fs.createWriteStream(`${logDir}/error.log`, { flags: 'a' });
+const logStream = fs.createWriteStream(path.join(logDir, 'app.log'), { flags: 'a' });
+const errorStream = fs.createWriteStream(path.join(logDir, 'error.log'), { flags: 'a' });
 
 function log(message, type = 'info') {
   const timestamp = new Date().toISOString();
@@ -38,10 +43,14 @@ function log(message, type = 'info') {
   }
 }
 
+// Inicializar Express
+const app = express();
+const PORT = process.env.PORT || 3000;
+
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 // app.use(express.static(path.join(process.cwd(), 'dist')));
 
 // Almacenamiento temporal en memoria para resultados por testId
@@ -127,14 +136,14 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Test ID faltante.' });
     }
 
-    const resultUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}`;
+    const resultUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}&k=${process.env.WPT_API_KEY}`;
     let response;
     let contentType;
     let resultData;
-    let retries = 12;
+    let retries = 18; // Aumentado a 18 intentos (3 minutos)
     
     const testStartTime = Date.now();
-    const minWaitTime = 60000;
+    const minWaitTime = 90000; // Aumentado a 90 segundos
     
     while (retries > 0) {
       const elapsedTime = Date.now() - testStartTime;
@@ -146,7 +155,11 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
       try {
         response = await fetch(resultUrl, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
           }
         });
         contentType = response.headers.get("content-type");
@@ -155,7 +168,7 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
           log(`Esperando verificación de seguridad (${Math.floor(elapsedTime/1000)}s)`);
           retries--;
           if (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 10000));
+            await new Promise(resolve => setTimeout(resolve, 15000)); // Aumentado a 15 segundos
           }
           continue;
         }
@@ -167,7 +180,7 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
             log(`Test en progreso (${Math.floor(elapsedTime/1000)}s)`);
             retries--;
             if (retries > 0) {
-              await new Promise(resolve => setTimeout(resolve, 10000));
+              await new Promise(resolve => setTimeout(resolve, 15000)); // Aumentado a 15 segundos
             }
             continue;
           }
@@ -175,10 +188,10 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
           break;
         }
       } catch (error) {
-        log(`Error en intento ${13-retries}: ${error.message}`, 'error');
+        log(`Error en intento ${19-retries}: ${error.message}`, 'error');
         retries--;
         if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 10000));
+          await new Promise(resolve => setTimeout(resolve, 15000)); // Aumentado a 15 segundos
         }
       }
     }
@@ -188,7 +201,8 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
         status: 'pending', 
         message: 'El test está en proceso. Por favor, espere unos minutos.',
         elapsedTime: Math.floor((Date.now() - testStartTime)/1000),
-        retriesLeft: retries
+        retriesLeft: retries,
+        testId: testId
       });
     }
 
@@ -217,11 +231,12 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
       
       return res.status(200).json({ status: 'complete', resumen });
     } else if (resultData.statusCode === 100) {
-      return res.status(200).json({ 
+      return res.status(202).json({ 
         status: 'pending', 
         message: 'El test sigue en proceso. Por favor, espere.',
         elapsedTime: Math.floor((Date.now() - testStartTime)/1000),
-        retriesLeft: retries
+        retriesLeft: retries,
+        testId: testId
       });
     } else {
       log(`Estado inesperado WebPageTest: ${resultData.statusText || resultData.statusCode}`, 'error');
