@@ -25,34 +25,43 @@ router.post('/webpagetest/run', async (req, res) => {
 
     log(`[info] Iniciando test para URL: ${url}, lighthouse: ${lighthouse}`);
 
-    // Usamos la API Pro v1 /runtest con form-urlencoded
-    const params = new URLSearchParams({
-      url,
-      runs: '1',
-      location: 'ec2-us-east-1:Chrome.Cable',
-      video: 'true',
-      mobile: 'false',
-      lighthouse: lighthouse ? '1' : '0'
-    });
+    // Construir los parámetros para la API legacy
+    const params = new URLSearchParams();
+    params.append('url', url);
+    params.append('f', 'json');
+    params.append('runs', '1');
+    params.append('location', 'ec2-us-east-1:Chrome.Cable');
+    params.append('video', '1');
+    params.append('lighthouse', lighthouse ? '1' : '0');
 
-    const response = await fetch('https://product.webpagetest.org/api/v1/runtest', {
+    const response = await fetch('https://www.webpagetest.org/runtest.php', {
       method: 'POST',
       headers: {
-        'X-API-Key': process.env.WEBPAGETEST_API_KEY
+        'X-WPT-API-KEY': process.env.WPT_API_KEY
       },
       body: params
     });
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      log(`❌ Error de WebPageTest (runtest): ${response.status} – ${JSON.stringify(errData)}`, 'error');
-      return res.status(response.status).json({
-        error: 'Error iniciando el test',
-        details: errData
+    const responseText = await response.text();
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (e) {
+      log(`❌ Error parseando respuesta: ${responseText}`, 'error');
+      return res.status(500).json({
+        error: 'Error parseando respuesta de WebPageTest',
+        details: responseText
       });
     }
 
-    const result = await response.json();
+    if (!response.ok) {
+      log(`❌ Error de WebPageTest (runtest): ${response.status} – ${JSON.stringify(result)}`, 'error');
+      return res.status(response.status).json({
+        error: 'Error iniciando el test',
+        details: result
+      });
+    }
+
     const testId = result.data?.testId;
     if (!testId) {
       throw new Error('No se recibió testId en la respuesta de runtest');
