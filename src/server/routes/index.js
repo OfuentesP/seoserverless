@@ -17,71 +17,51 @@ const analysisStatus = new Map();
 // Iniciar test de WebPageTest
 router.post('/webpagetest/run', async (req, res) => {
   try {
-    // Leer también el flag de lighthouse
     const { url, lighthouse = false } = req.body;
 
     if (!url) {
-      log('❌ No se proporcionó URL.', 'error');
-      return res.status(400).json({ success: false, message: 'URL no proporcionada.' });
+      return res.status(400).json({ error: 'URL is required' });
     }
 
-    log(`[info] Iniciando test para: ${url}`);
-    log(`[debug] API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
+    console.log(`Iniciando test para URL: ${url}, lighthouse: ${lighthouse}`);
 
-    const response = await fetch('https://product.webpagetest.org/api/v1/test', {
+    const params = new URLSearchParams({
+      url,
+      runs: '1',
+      location: 'ec2-us-east-1:Chrome.Cable',
+      video: 'true',
+      mobile: 'false',
+      lighthouse: lighthouse ? '1' : '0'
+    });
+
+    const response = await fetch('https://product.webpagetest.org/api/v1/runtest', {
       method: 'POST',
       headers: {
-        'X-API-Key': process.env.WPT_API_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'X-WPT-API-KEY': process.env.WEBPAGETEST_API_KEY
       },
-      body: JSON.stringify({
-        url,
-        runs: 1,
-        location: 'ec2-us-east-1:Chrome.Cable',
-        video: true,
-        mobile: false,
-        lighthouse: Boolean(lighthouse)
-      })
+      body: params
     });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      log(`❌ Error de WebPageTest: ${response.status} - ${JSON.stringify(errorData)}`, 'error');
-      throw new Error(`Error de WebPageTest: ${response.status}`);
-    }
 
     const data = await response.json();
-    const testId = data.data?.testId;
 
-    if (!testId) {
-      throw new Error('No se recibió testId en la respuesta');
+    if (data.statusCode === 200) {
+      console.log('Test iniciado exitosamente:', data);
+      return res.json({
+        testId: data.data.testId,
+        status: 'Test iniciado exitosamente'
+      });
+    } else {
+      console.error('Error iniciando test:', data);
+      return res.status(400).json({
+        error: 'Error inesperado ejecutando test',
+        details: data
+      });
     }
-
-    // Guardar estado inicial
-    analysisStatus.set(testId, { 
-      timestamp: Date.now(),
-      status: 'pending', 
-      resumen: null 
-    });
-
-    log(`[info] Test iniciado correctamente: ${testId}`);
-
-    return res.json({
-      success: true,
-      testId: testId,
-      resumen: { 
-        detalles: data.data?.summary || data.data?.userUrl 
-      },
-      status: 'pending'
-    });
-
   } catch (error) {
-    log(`❌ Error inesperado: ${error.message}`, 'error');
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Error inesperado ejecutando test.',
-      error: error.message
+    console.error('Error ejecutando test:', error);
+    return res.status(500).json({
+      error: 'Error interno ejecutando test',
+      details: error.message
     });
   }
 });
@@ -90,74 +70,47 @@ router.post('/webpagetest/run', async (req, res) => {
 router.get('/webpagetest/results/:testId', async (req, res) => {
   try {
     const { testId } = req.params;
-    
+
     if (!testId) {
-      log('❌ No se proporcionó testId.', 'error');
-      return res.status(400).json({ success: false, message: 'TestId no proporcionado.' });
+      return res.status(400).json({ error: 'Test ID is required' });
     }
 
-    log(`[info] Consultando resultados para test: ${testId}`);
+    console.log(`Obteniendo resultados para test ID: ${testId}`);
 
-    // 1) Intenta primero la API Pro v1
-    let response = await fetch(
-      `https://product.webpagetest.org/api/v1/result/${testId}`,
-      { headers: { 'X-API-Key': process.env.WPT_API_KEY, 'Accept': 'application/json' } }
-    );
-    // 2) Si falla, cae en la API gratuita legacy
-    if (!response.ok) {
-      log(`[info] Pro v1 no disponible (${response.status}), uso legacy`);
-      response = await fetch(
-        `https://www.webpagetest.org/jsonResult.php?test=${testId}&f=json`,
-        { headers: { 'X-WPT-API-KEY': process.env.WPT_API_KEY, 'Accept': 'application/json' } }
-      );
-      if (!response.ok) throw new Error(`Legacy error HTTP ${response.status}`);
-    }
-    const data = await response.json();
-    
-    // Si el test aún está en proceso
-    if (data.statusCode === 100 || data.statusText?.includes("Testing")) {
-      return res.json({
-        success: true,
-        testId,
-        status: 'pending',
-        message: 'Test en proceso'
-      });
-    }
-    
-    // Actualizar estado
-    analysisStatus.set(testId, {
-      timestamp: Date.now(),
-      status: 'completed',
-      resumen: data
-    });
-
-    log(`[info] Resultados obtenidos correctamente para: ${testId}`);
-
-    return res.json({
-      success: true,
-      testId,
-      status: 'completed',
-      resumen: {
-        url: data.data?.url || data.url,
-        loadTime: data.data?.runs?.['1']?.firstView?.loadTime || data.loadTime,
-        SpeedIndex: data.data?.runs?.['1']?.firstView?.SpeedIndex || data.SpeedIndex,
-        TTFB: data.data?.runs?.['1']?.firstView?.TTFB || data.TTFB,
-        totalSize: data.data?.runs?.['1']?.firstView?.bytesIn || data.bytesIn,
-        requests: data.data?.runs?.['1']?.firstView?.requests || data.requests,
-        lcp: data.data?.runs?.['1']?.firstView?.largestContentfulPaint || data.LCP,
-        cls: data.data?.runs?.['1']?.firstView?.cumulativeLayoutShift || data.CLS,
-        tbt: data.data?.runs?.['1']?.firstView?.totalBlockingTime || data.TBT,
-        detalles: data.data?.summary || data.summary,
-        lighthouse: data.data?.lighthouse || data.lighthouse || null
+    const response = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-WPT-API-KEY': process.env.WEBPAGETEST_API_KEY
       }
     });
 
+    const data = await response.json();
+
+    if (data.statusCode === 200) {
+      console.log('Resultados obtenidos exitosamente');
+      return res.json({
+        status: 'success',
+        data: data.data
+      });
+    } else if (data.statusCode === 100) {
+      console.log('Test aún en progreso');
+      return res.json({
+        status: 'pending',
+        message: 'Test still running'
+      });
+    } else {
+      console.error('Error obteniendo resultados:', data);
+      return res.status(400).json({
+        error: 'Error obteniendo resultados',
+        details: data
+      });
+    }
   } catch (error) {
-    log(`❌ Error inesperado: ${error.message}`, 'error');
+    console.error('Error interno obteniendo resultados:', error);
     return res.status(500).json({
-      success: false,
-      message: 'Error inesperado obteniendo resultados.',
-      error: error.message
+      error: 'Error interno obteniendo resultados',
+      details: error.message
     });
   }
 });
