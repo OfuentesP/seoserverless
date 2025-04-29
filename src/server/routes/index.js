@@ -309,39 +309,14 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
 
     log(`[info] Consultando resultados Lighthouse para testId: ${testId}`);
 
-    // Primero verificamos si el test principal ha terminado
-    const statusResponse = await fetch(
-      `https://product.webpagetest.org/api/v1/test/${testId}`,
-      {
-        method: 'GET',
-        headers: {
-          'X-API-Key': process.env.WPT_API_KEY
-        }
-      }
-    );
-
-    if (!statusResponse.ok) {
-      const err = await statusResponse.json().catch(() => ({}));
-      throw new Error(`WPT Pro error ${statusResponse.status}: ${err.statusText || JSON.stringify(err)}`);
-    }
-
-    const statusJson = await statusResponse.json();
-    
-    if (statusJson.status !== 'complete') {
-      return res.status(202).json({
-        success: false,
-        message: 'El test aún no ha terminado. Por favor, espere.',
-        status: statusJson.status
-      });
-    }
-
-    // Si el test está completo, obtenemos el Lighthouse
+    // Llamada directa a la API PRO para obtener resultados completos
     const response = await fetch(
-      `https://product.webpagetest.org/api/v1/test/${testId}/lighthouse`,
+      `https://www.webpagetest.org/jsonResult.php?test=${testId}&lighthouse=1`,
       {
         method: 'GET',
         headers: {
-          'X-API-Key': process.env.WPT_API_KEY
+          'X-WPT-API-KEY': process.env.WPT_API_KEY,
+          'Accept': 'application/json'
         }
       }
     );
@@ -352,9 +327,18 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
     }
 
     const json = await response.json();
-    log('[info] Lighthouse obtenido correctamente via API PRO');
-    
-    return res.json(json.data);
+    log('[info] Lighthouse obtenido correctamente');
+
+    // Extraer datos de Lighthouse según la estructura
+    if (json?.data?.lighthouse) {
+      return res.json(json.data.lighthouse);
+    } else if (json?.data?.runs?.['1']?.lighthouse) {
+      return res.json(json.data.runs['1'].lighthouse);
+    } else if (json?.data?.runs?.['1']?.lighthouseResult) {
+      return res.json(json.data.runs['1'].lighthouseResult);
+    }
+
+    throw new Error('No se encontraron datos de Lighthouse en la respuesta');
 
   } catch (error) {
     log(`[error] Error obteniendo resultados Lighthouse: ${error.message}`);
