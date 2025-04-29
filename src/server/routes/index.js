@@ -38,64 +38,42 @@ router.post('/webpagetest/run', async (req, res) => {
     log(`[info] Iniciando test para: ${url}`);
     log(`[debug] API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
 
-    // Función para intentar iniciar el test usando la biblioteca oficial
-    const runTest = async (retryCount = 0) => {
-      try {
-        const testPromise = new Promise((resolve, reject) => {
-          wpt.runTest(url, {
-            connectivity: 'Cable',
-            location: 'ec2-us-east-1:Chrome',
-            runs: 1,
-            video: true,
-            mobile: false,
-            pollResults: false,
-            firstViewOnly: true,
-            timeout: 30,
-            emulateMobile: false,
-            ignoreSSL: true,
-            disableHTTPHeaders: true,
-            disableScreenshot: true,
-            disableOptimization: true,
-            disableCompatibilityView: true
-          }, (err, data) => {
-            if (err) {
-              log(`[error] Error de WebPageTest: ${err.message}`);
-              reject(err);
-            } else {
-              log(`[debug] Respuesta WebPageTest: ${JSON.stringify(data)}`);
-              resolve(data);
-            }
-          });
-        });
+    // Llamada directa a la API PRO v1
+    const response = await fetch('https://product.webpagetest.org/api/v1/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': process.env.WPT_API_KEY
+      },
+      body: JSON.stringify({
+        url,
+        runs: 1,
+        location: 'ec2-us-east-1:Chrome.Cable',
+        video: true,
+        mobile: false,
+        lighthouse: true  // Esto asegura que se genere el informe de Lighthouse
+      })
+    });
 
-        const data = await testPromise;
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`WPT Pro error ${response.status}: ${err.statusText || JSON.stringify(err)}`);
+    }
 
-        if (!data || !data.data || !data.data.testId) {
-          throw new Error('No se recibió testId en la respuesta');
-        }
+    const data = await response.json();
+    
+    if (!data || !data.data || !data.data.testId) {
+      throw new Error('No se recibió testId en la respuesta');
+    }
 
-        // Guardar estado inicial
-        analysisStatus.set(data.data.testId, { 
-          timestamp: Date.now(),
-          status: 'pending', 
-          resumen: null 
-        });
+    // Guardar estado inicial
+    analysisStatus.set(data.data.testId, { 
+      timestamp: Date.now(),
+      status: 'pending', 
+      resumen: null 
+    });
 
-        log(`[info] Test iniciado correctamente: ${data.data.testId}`);
-        return data;
-
-      } catch (error) {
-        if (retryCount < 2) {
-          log(`[warn] Error en intento ${retryCount + 1}: ${error.message}`);
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          return runTest(retryCount + 1);
-        }
-        throw error;
-      }
-    };
-
-    // Intentar iniciar el test con reintentos
-    const data = await runTest();
+    log(`[info] Test iniciado correctamente: ${data.data.testId}`);
 
     return res.json({
       success: true,
@@ -309,15 +287,10 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
 
     log(`[info] Consultando resultados Lighthouse para testId: ${testId}`);
 
-    // Llamada directa a la API PRO para obtener resultados completos
     const response = await fetch(
-      `https://www.webpagetest.org/jsonResult.php?test=${testId}&lighthouse=1`,
+      `https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`,
       {
-        method: 'GET',
-        headers: {
-          'X-WPT-API-KEY': process.env.WPT_API_KEY,
-          'Accept': 'application/json'
-        }
+        headers: { 'X-API-Key': process.env.WPT_API_KEY }
       }
     );
 
@@ -327,18 +300,10 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
     }
 
     const json = await response.json();
-    log('[info] Lighthouse obtenido correctamente');
-
-    // Extraer datos de Lighthouse según la estructura
-    if (json?.data?.lighthouse) {
-      return res.json(json.data.lighthouse);
-    } else if (json?.data?.runs?.['1']?.lighthouse) {
-      return res.json(json.data.runs['1'].lighthouse);
-    } else if (json?.data?.runs?.['1']?.lighthouseResult) {
-      return res.json(json.data.runs['1'].lighthouseResult);
-    }
-
-    throw new Error('No se encontraron datos de Lighthouse en la respuesta');
+    log('[info] Lighthouse obtenido correctamente via API PRO');
+    
+    // json.data.lighthouse contiene el informe completo
+    return res.json(json.data.lighthouse);
 
   } catch (error) {
     log(`[error] Error obteniendo resultados Lighthouse: ${error.message}`);
