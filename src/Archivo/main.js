@@ -9,7 +9,7 @@ import Loading from './views/Loading.vue'
 // Polyfills para compatibilidad del navegador
 if (typeof global === 'undefined') {
   window.global = window;
-}
+} 
 
 if (typeof process === 'undefined') {
   window.process = { env: {} };
