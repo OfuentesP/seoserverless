@@ -125,57 +125,129 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
     const { testId } = req.params;
     
     if (!testId) {
+      log('❌ No se proporcionó testId.', 'error');
       return res.status(400).json({ success: false, message: 'Test ID faltante.' });
     }
 
-    const resultUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}`;
-    const response = await fetch(resultUrl, {
-      headers: {
-        'X-API-Key': process.env.WPT_API_KEY
+    log(`[info] Consultando resultados para testId: ${testId}`);
+
+    // Esperar un mínimo de tiempo antes de consultar resultados
+    const status = analysisStatus.get(testId);
+    if (status) {
+      const elapsedTime = Date.now() - status.timestamp;
+      if (elapsedTime < 60000) { // Menos de 1 minuto
+        log(`[info] Test aún muy reciente (${Math.floor(elapsedTime/1000)}s), esperando...`);
+        return res.status(202).json({
+          status: 'pending',
+          message: 'El test está en proceso. Por favor, espere al menos 1 minuto.',
+          elapsedTime: Math.floor(elapsedTime/1000)
+        });
       }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Error obteniendo resultados: ${response.status}`);
     }
 
-    const data = await response.json();
-    
-    if (data.statusCode === 100) {
-      return res.status(202).json({
-        status: 'pending',
-        message: 'El test sigue en proceso. Por favor, espere.'
-      });
-    }
+    // Función para intentar obtener resultados con reintentos
+    const getResults = async (retryCount = 0) => {
+      try {
+        const resultUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}`;
+        log(`[debug] Consultando URL: ${resultUrl}`);
 
-    if (data.statusCode === 200) {
-      const firstView = data.data.runs['1'].firstView;
-      const resumen = {
-        url: data.data.url,
-        loadTime: firstView.loadTime,
-        SpeedIndex: firstView.SpeedIndex,
-        TTFB: firstView.TTFB,
-        totalSize: firstView.bytesIn,
-        requests: firstView.requests,
-        lcp: firstView.largestContentfulPaint,
-        cls: firstView.cumulativeLayoutShift,
-        tbt: firstView.totalBlockingTime,
-        detalles: data.data.summary
-      };
+        const response = await fetch(resultUrl, {
+          headers: {
+            'X-API-Key': process.env.WPT_API_KEY,
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          }
+        });
 
-      analysisStatus.set(testId, {
-        timestamp: Date.now(),
-        status: 'complete',
-        resumen
-      });
+        const contentType = response.headers.get('content-type');
+        log(`[debug] Content-Type: ${contentType}`);
+        
+        if (!response.ok) {
+          throw new Error(`Error HTTP: ${response.status}`);
+        }
 
-      return res.json({ status: 'complete', resumen });
-    }
+        const responseText = await response.text();
+        log(`[debug] Primeros 200 caracteres de respuesta: ${responseText.substring(0, 200)}`);
 
-    throw new Error(`Estado inesperado: ${data.statusText}`);
+        // Verificar si la respuesta es HTML
+        if (contentType?.includes('text/html') || responseText.includes('<!DOCTYPE html>')) {
+          if (retryCount < 2) {
+            log(`[warn] Recibida respuesta HTML, reintentando en 5 segundos...`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            return getResults(retryCount + 1);
+          }
+          throw new Error('Recibida respuesta HTML después de reintentos');
+        }
+
+        // Intentar parsear como JSON
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (e) {
+          log(`[error] Error parseando JSON: ${e.message}`);
+          throw new Error('Respuesta no es JSON válido');
+        }
+
+        if (data.statusCode === 100) {
+          log('[info] Test aún en proceso');
+          return {
+            status: 202,
+            body: {
+              status: 'pending',
+              message: 'El test sigue en proceso. Por favor, espere.',
+              data: data
+            }
+          };
+        }
+
+        if (data.statusCode === 200) {
+          log('[info] Test completado, procesando resultados');
+          const firstView = data.data.runs['1'].firstView;
+          const resumen = {
+            url: data.data.url,
+            loadTime: firstView.loadTime,
+            SpeedIndex: firstView.SpeedIndex,
+            TTFB: firstView.TTFB,
+            totalSize: firstView.bytesIn,
+            requests: firstView.requests,
+            lcp: firstView.largestContentfulPaint,
+            cls: firstView.cumulativeLayoutShift,
+            tbt: firstView.totalBlockingTime,
+            detalles: data.data.summary
+          };
+
+          analysisStatus.set(testId, {
+            timestamp: Date.now(),
+            status: 'complete',
+            resumen
+          });
+
+          return {
+            status: 200,
+            body: { 
+              status: 'complete', 
+              resumen 
+            }
+          };
+        }
+
+        throw new Error(`Estado inesperado: ${data.statusText || data.statusCode}`);
+
+      } catch (error) {
+        if (retryCount < 2) {
+          log(`[warn] Error en intento ${retryCount + 1}: ${error.message}`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          return getResults(retryCount + 1);
+        }
+        throw error;
+      }
+    };
+
+    const result = await getResults();
+    return res.status(result.status).json(result.body);
 
   } catch (error) {
-    log(`Error obteniendo resultados: ${error.message}`, 'error');
+    log(`❌ Error obteniendo resultados: ${error.message}`, 'error');
     return res.status(500).json({ 
       success: false, 
       message: 'Error obteniendo resultados.',
