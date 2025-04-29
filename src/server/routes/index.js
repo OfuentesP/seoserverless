@@ -39,7 +39,7 @@ router.post('/webpagetest/run', async (req, res) => {
     log(`[debug] API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
 
     // Llamada directa a la API PRO v1
-    const response = await fetch('https://product.webpagetest.org/api/v1/test', {
+    const response = await fetch('https://product.webpagetest.org/api/v1/runtest', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
