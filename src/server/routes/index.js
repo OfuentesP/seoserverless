@@ -38,7 +38,7 @@ router.post('/webpagetest/run', async (req, res) => {
       lighthouse: '1'
     });
 
-    const resp = await fetch(`https://product.webpagetest.org/runtest.php?${params.toString()}`, {
+    const resp = await fetch(`https://www.webpagetest.org/runtest.php?${params.toString()}`, {
       headers: {
         'X-WPT-API-KEY': process.env.WPT_API_KEY,
         'Accept': 'application/json'
