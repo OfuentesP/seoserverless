@@ -27,23 +27,26 @@ router.post('/webpagetest/run', async (req, res) => {
     log(`[info] Iniciando test para: ${url}`);
     log(`[debug] API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
 
-    // Usar la API PRO v1 para iniciar el test
-    const response = await fetch('https://product.webpagetest.org/api/v1/test', {
-      method: 'POST',
-      headers: {
-        'X-API-Key': process.env.WPT_API_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        url,
-        runs: 1,
-        location: 'ec2-us-east-1:Chrome.Cable',
-        video: true,
-        mobile: false,
-        lighthouse: true
-      })
+    // Usar el endpoint legacy con parámetros para JSON y Lighthouse
+    const params = new URLSearchParams({
+      url,
+      runs: '1',
+      location: 'ec2-us-east-1:Chrome.Cable',
+      video: 'true',
+      mobile: 'false',
+      f: 'json',
+      lighthouse: '1'
     });
+
+    const response = await fetch(
+      `https://www.webpagetest.org/runtest.php?${params.toString()}`,
+      {
+        headers: {
+          'X-WPT-API-KEY': process.env.WPT_API_KEY,
+          'Accept': 'application/json'
+        }
+      }
+    );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -52,7 +55,7 @@ router.post('/webpagetest/run', async (req, res) => {
     }
 
     const data = await response.json();
-    const testId = data.testId;
+    const testId = data.data?.testId;
 
     if (!testId) {
       throw new Error('No se recibió testId en la respuesta');
@@ -71,7 +74,7 @@ router.post('/webpagetest/run', async (req, res) => {
       success: true,
       testId: testId,
       resumen: { 
-        detalles: data.summary || data.userUrl 
+        detalles: data.data?.summary || data.data?.userUrl 
       },
       status: 'pending'
     });
@@ -98,32 +101,40 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
 
     log(`[info] Consultando resultados para test: ${testId}`);
 
-    // Usar la API PRO v1 para obtener resultados
-    const response = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}`, {
-      headers: {
-        'X-API-Key': process.env.WPT_API_KEY,
-        'Accept': 'application/json'
+    // Usar el endpoint legacy para obtener resultados
+    const response = await fetch(
+      `https://www.webpagetest.org/jsonResult.php?test=${testId}&f=json`,
+      {
+        headers: {
+          'X-WPT-API-KEY': process.env.WPT_API_KEY,
+          'Accept': 'application/json'
+        }
       }
-    });
+    );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       log(`❌ Error obteniendo resultados: ${response.status} - ${JSON.stringify(errorData)}`, 'error');
-      
-      // Si el test aún no está completo, devolver estado pending
-      if (response.status === 404 || response.status === 400) {
-        return res.json({
-          success: true,
-          testId,
-          status: 'pending',
-          message: 'Test en proceso'
-        });
-      }
-      
       throw new Error(`Error obteniendo resultados: ${response.status}`);
     }
 
     const data = await response.json();
+    
+    // Si el test aún está en proceso
+    if (data.statusCode === 100 || data.statusText?.includes("Testing")) {
+      return res.json({
+        success: true,
+        testId,
+        status: 'pending',
+        message: 'Test en proceso'
+      });
+    }
+
+    // Extraer métricas del firstView
+    const firstView = data.data?.runs?.['1']?.firstView;
+    if (!firstView) {
+      throw new Error('No se encontraron métricas en la respuesta');
+    }
     
     // Actualizar estado
     analysisStatus.set(testId, {
@@ -139,12 +150,14 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
       testId,
       status: 'completed',
       resumen: {
-        url: data.url,
-        loadTime: data.loadTime,
-        firstByte: data.firstByte,
-        speedIndex: data.speedIndex,
-        visualComplete: data.visualComplete,
-        lighthouse: data.lighthouse || null
+        url: data.data.testUrl,
+        loadTime: firstView.loadTime,
+        firstByte: firstView.TTFB,
+        speedIndex: firstView.SpeedIndex,
+        visualComplete: firstView.visualComplete,
+        requests: firstView.requests,
+        bytesIn: firstView.bytesIn,
+        lighthouse: data.data.lighthouse || null
       }
     });
 
@@ -169,54 +182,31 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
 
     log(`[info] Consultando resultados Lighthouse para testId: ${testId}`);
 
-    // Primero verificar si el test principal está completo
-    const statusResponse = await fetch(
-      `https://www.webpagetest.org/jsonResult.php?test=${testId}`,
-      {
-        headers: {
-          'X-WPT-API-KEY': process.env.WPT_API_KEY,
-          'Accept': 'application/json'
-        }
+    // Usar la API PRO v1 para obtener resultados completos incluyendo Lighthouse
+    const response = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`, {
+      headers: {
+        'X-API-Key': process.env.WPT_API_KEY,
+        'Accept': 'application/json'
       }
-    );
+    });
 
-    if (!statusResponse.ok) {
-      throw new Error(`Error verificando estado del test: ${statusResponse.status}`);
-    }
-
-    const statusData = await statusResponse.json();
-    
-    // Si el test aún no está completo, informar al cliente
-    if (statusData.statusCode === 100 || statusData.statusText?.includes("Testing")) {
-      return res.status(202).json({
-        success: false,
-        status: 'pending',
-        message: 'El test principal aún no ha terminado. Por favor, espere.'
-      });
-    }
-
-    // Una vez que el test está completo, obtener Lighthouse
-    const lighthouseResponse = await fetch(
-      `https://www.webpagetest.org/jsonResult.php?test=${testId}&lighthouse=1`,
-      {
-        headers: {
-          'X-WPT-API-KEY': process.env.WPT_API_KEY,
-          'Accept': 'application/json'
-        }
+    if (!response.ok) {
+      // Si el test aún no está completo
+      if (response.status === 404 || response.status === 400) {
+        return res.json({
+          success: true,
+          status: 'pending',
+          message: 'Test en proceso'
+        });
       }
-    );
-
-    if (!lighthouseResponse.ok) {
-      throw new Error(`Error obteniendo Lighthouse: ${lighthouseResponse.status}`);
+      throw new Error(`Error obteniendo resultados: ${response.status}`);
     }
 
-    const json = await lighthouseResponse.json();
-    log(`[debug] Respuesta Lighthouse: ${JSON.stringify(json).substring(0, 200)}...`);
+    const data = await response.json();
+    log(`[debug] Respuesta completa recibida: ${JSON.stringify(data).substring(0, 200)}...`);
 
-    // Buscar los datos de Lighthouse en diferentes ubicaciones posibles
-    const lighthouse = json.data?.lighthouse || 
-                      json.data?.runs?.['1']?.lighthouse ||
-                      json.data?.runs?.['1']?.lighthouseResult;
+    // Extraer datos de Lighthouse de la respuesta
+    const lighthouse = data.lighthouse;
 
     if (!lighthouse) {
       throw new Error('No se encontraron datos de Lighthouse en la respuesta');
