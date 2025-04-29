@@ -27,21 +27,22 @@ router.post('/webpagetest/run', async (req, res) => {
     log(`[info] Iniciando test para: ${url}`);
     log(`[debug] API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
 
-    // Llamada directa a la API Pro v1
-    const resp = await fetch('https://product.webpagetest.org/api/v1/runtest', {
-      method: 'POST',
+    // Llamada a WebPageTest usando GET con querystring
+    const params = new URLSearchParams({
+      url,
+      runs: '1',
+      location: 'ec2-us-east-1:Chrome.Cable',
+      video: 'true',
+      mobile: 'false',
+      f: 'json',
+      lighthouse: '1'
+    });
+
+    const resp = await fetch(`https://product.webpagetest.org/runtest.php?${params.toString()}`, {
       headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': process.env.WPT_API_KEY
-      },
-      body: JSON.stringify({
-        url,
-        runs: 1,
-        location: 'ec2-us-east-1:Chrome.Cable',
-        video: true,
-        mobile: false,
-        lighthouse: true      // si también quieres Lighthouse
-      })
+        'X-WPT-API-KEY': process.env.WPT_API_KEY,
+        'Accept': 'application/json'
+      }
     });
 
     if (!resp.ok) {
@@ -63,7 +64,7 @@ router.post('/webpagetest/run', async (req, res) => {
     return res.json({
       success: true,
       testId: data.data.testId,
-      resumen: { detalles: data.data.summary },
+      resumen: { detalles: data.data.userUrl || data.data.summary },
       status: 'pending'
     });
 
