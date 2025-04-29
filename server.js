@@ -158,34 +158,27 @@ app.post('/api/webpagetest/run', async (req, res) => {
 
     log(`[info] Iniciando test para: ${url}`);
 
-    const response = await fetch('https://www.webpagetest.org/api/v1/test', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': process.env.WPT_API_KEY
-      },
-      body: JSON.stringify({
-        url: url,
-        location: 'ec2-us-east-1:Chrome.Cable',
+    // Usar la biblioteca oficial de WebPageTest
+    const testPromise = new Promise((resolve, reject) => {
+      wpt.runTest(url, {
+        connectivity: 'Cable',
+        location: 'ec2-us-east-1:Chrome',
         runs: 1,
-        mobile: false,
-        video: true
-      })
+        video: true,
+        mobile: false
+      }, (err, data) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(data);
+        }
+      });
     });
 
-    const data = await response.json();
+    const data = await testPromise;
     
     // Log de la respuesta completa para debugging
     log(`[debug] Respuesta WebPageTest: ${JSON.stringify(data)}`, 'info');
-
-    if (!response.ok) {
-      log(`❌ Error de API (${response.status}): ${data.statusText || JSON.stringify(data)}`, 'error');
-      return res.status(response.status).json({ 
-        success: false, 
-        message: data.statusText || 'Error al iniciar el test.',
-        error: data
-      });
-    }
 
     if (!data || !data.data || !data.data.testId) {
       log(`❌ Respuesta inválida: ${JSON.stringify(data)}`, 'error');
@@ -204,7 +197,7 @@ app.post('/api/webpagetest/run', async (req, res) => {
     });
 
     log(`[info] Test iniciado correctamente: ${data.data.testId}`);
-    log(`[info] URL resultados WebPageTest: ${data.data.summary}`);
+    log(`[info] URL resultados WebPageTest: ${data.data.userUrl}`);
 
     return res.json({
       success: true,
@@ -213,7 +206,7 @@ app.post('/api/webpagetest/run', async (req, res) => {
         loadTime: null,
         SpeedIndex: null,
         TTFB: null,
-        detalles: data.data.summary
+        detalles: data.data.userUrl
       },
       status: 'pending'
     });
