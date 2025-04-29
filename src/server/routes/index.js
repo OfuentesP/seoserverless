@@ -101,23 +101,20 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
 
     log(`[info] Consultando resultados para test: ${testId}`);
 
-    // Usar el endpoint legacy para obtener resultados
-    const response = await fetch(
-      `https://www.webpagetest.org/jsonResult.php?test=${testId}&f=json`,
-      {
-        headers: {
-          'X-WPT-API-KEY': process.env.WPT_API_KEY,
-          'Accept': 'application/json'
-        }
-      }
+    // 1) Intenta primero la API Pro v1
+    let response = await fetch(
+      `https://product.webpagetest.org/api/v1/result/${testId}`,
+      { headers: { 'X-API-Key': process.env.WPT_API_KEY, 'Accept': 'application/json' } }
     );
-
+    // 2) Si falla, cae en la API gratuita legacy
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      log(`❌ Error obteniendo resultados: ${response.status} - ${JSON.stringify(errorData)}`, 'error');
-      throw new Error(`Error obteniendo resultados: ${response.status}`);
+      log(`[info] Pro v1 no disponible (${response.status}), uso legacy`);
+      response = await fetch(
+        `https://www.webpagetest.org/jsonResult.php?test=${testId}&f=json`,
+        { headers: { 'X-WPT-API-KEY': process.env.WPT_API_KEY, 'Accept': 'application/json' } }
+      );
+      if (!response.ok) throw new Error(`Legacy error HTTP ${response.status}`);
     }
-
     const data = await response.json();
     
     // Si el test aún está en proceso
@@ -128,12 +125,6 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
         status: 'pending',
         message: 'Test en proceso'
       });
-    }
-
-    // Extraer métricas del firstView
-    const firstView = data.data?.runs?.['1']?.firstView;
-    if (!firstView) {
-      throw new Error('No se encontraron métricas en la respuesta');
     }
     
     // Actualizar estado
@@ -150,14 +141,17 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
       testId,
       status: 'completed',
       resumen: {
-        url: data.data.testUrl,
-        loadTime: firstView.loadTime,
-        firstByte: firstView.TTFB,
-        speedIndex: firstView.SpeedIndex,
-        visualComplete: firstView.visualComplete,
-        requests: firstView.requests,
-        bytesIn: firstView.bytesIn,
-        lighthouse: data.data.lighthouse || null
+        url: data.data?.url || data.url,
+        loadTime: data.data?.runs?.['1']?.firstView?.loadTime || data.loadTime,
+        SpeedIndex: data.data?.runs?.['1']?.firstView?.SpeedIndex || data.SpeedIndex,
+        TTFB: data.data?.runs?.['1']?.firstView?.TTFB || data.TTFB,
+        totalSize: data.data?.runs?.['1']?.firstView?.bytesIn || data.bytesIn,
+        requests: data.data?.runs?.['1']?.firstView?.requests || data.requests,
+        lcp: data.data?.runs?.['1']?.firstView?.largestContentfulPaint || data.LCP,
+        cls: data.data?.runs?.['1']?.firstView?.cumulativeLayoutShift || data.CLS,
+        tbt: data.data?.runs?.['1']?.firstView?.totalBlockingTime || data.TBT,
+        detalles: data.data?.summary || data.summary,
+        lighthouse: data.data?.lighthouse || data.lighthouse || null
       }
     });
 
