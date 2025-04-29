@@ -2,6 +2,28 @@ import { ref, computed, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 
+// Configuración de axios para este módulo
+const axiosInstance = axios.create({
+  timeout: 30000, // 30 segundos
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+// Interceptor para reintentos
+axiosInstance.interceptors.response.use(null, async (error) => {
+  const { config } = error;
+  config.retryCount = config.retryCount || 0;
+  
+  if (config.retryCount < 3) {
+    config.retryCount += 1;
+    await new Promise(resolve => setTimeout(resolve, 1000 * config.retryCount));
+    return axiosInstance(config);
+  }
+  
+  return Promise.reject(error);
+});
+
 // Limitar el número de tests simultáneos
 let activeTests = 0;
 const MAX_CONCURRENT_TESTS = 2;
@@ -177,109 +199,126 @@ export function useSeoAnalysis() {
       }
       
       recordRequest();
-      const testResponse = await axios.post('/api/webpagetest/run', { url: inputUrl });
       
-      // Verificar si estamos bloqueados
-      if (isBlockedByWebPageTest(testResponse)) {
-        throw new Error('WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.');
-      }
-      
-      const testId = testResponse.data.testId;
-      console.log(`[useSeoAnalysis] ✅ WebPageTest iniciado. ID: ${testId}`);
-
-      progress.value = 20;
-      currentStep.value = 'Obteniendo resultados de WebPageTest...';
-      estado.value = '⏳ Esperando resultados de WebPageTest...';
-
-      // Polling para resultados con reintentos inteligentes
-      let webpagetestResults = null;
-      let pollingAttempts = 0;
-      const maxPollingAttempts = 30; // 10 minutos si el intervalo es 20s
-      
-      while (pollingAttempts < maxPollingAttempts) {
-        const result = await checkWebPageTestResults(testId);
-        
-        if (result.status === 'complete') {
-          webpagetestResults = result.data;
-          break;
-        } else if (result.status === 'error') {
-          throw new Error(`Error en WebPageTest: ${result.message}`);
-        }
-        
-        pollingAttempts++;
-        progress.value = 20 + Math.min(20, (pollingAttempts / maxPollingAttempts) * 20);
-      }
-      
-      if (!webpagetestResults) {
-        throw new Error('Timeout esperando resultados de WebPageTest');
-      }
-      
-      console.log(`[useSeoAnalysis] ✅ WebPageTest resultados:`, webpagetestResults);
-
-      progress.value = 40;
-      currentStep.value = 'Obteniendo resultados de Lighthouse...';
-
-      // Step 2: Lighthouse Results
-      const lighthouseResponse = await axios.get(`/api/lighthouse/results/${testId}`);
-      lighthouse.value = lighthouseResponse.data;
-      console.log(`[useSeoAnalysis] ✅ Lighthouse resultados:`, lighthouse.value);
-
-      const metrics = lighthouse.value?.audits || {};
-      resumen.value = {
-        url: webpagetestResults.url || webpagetestResults.testUrl || null,
-        lcp: metrics['largest-contentful-paint']?.numericValue ?? null,
-        cls: metrics['cumulative-layout-shift']?.numericValue ?? null,
-        tbt: metrics['total-blocking-time']?.numericValue ?? null,
-        fcp: metrics['first-contentful-paint']?.numericValue ?? null,
-        si: metrics['speed-index']?.numericValue ?? null,
-        ttfb: webpagetestResults.TTFB ?? null,
-        loadTime: webpagetestResults.loadTime ?? null,
-        webpagetestUrl: webpagetestResults.detalles ?? null,
-        totalSize: webpagetestResults.totalSize ?? null,
-        requests: webpagetestResults.requests ?? null
-      };
-      console.log(`[useSeoAnalysis] 📈 Core Web Vitals extraídos:`, resumen.value);
-
-      estado.value = '✅ WebPageTest y Lighthouse OK';
-      progress.value = 60;
-
-      // Step 3: Sitemap Analysis
-      console.log(`[useSeoAnalysis] 📊 Analizando Sitemap...`);
       try {
-        const sitemapResponse = await axios.post('/api/sitemap/analyze', { url: inputUrl });
-        sitemapResults.value = sitemapResponse.data;
-        console.log(`[useSeoAnalysis] ✅ Sitemap resultados:`, sitemapResults.value);
-      } catch (sitemapError) {
-        console.error(`[useSeoAnalysis] ❌ Error analizando Sitemap:`, extractErrorDetails(sitemapError));
-        sitemapResults.value = { error: sitemapError.message };
-      }
-
-      progress.value = 100;
-      currentStep.value = 'Análisis completado';
-      estado.value = '✅ Análisis completo';
-
-      // Step 4: Navigation and passing data
-      const finTimestamp = Date.now();
-      console.log(`[useSeoAnalysis] 🕒 Fin análisis: ${new Date(finTimestamp).toISOString()}`);
-      console.log(`[useSeoAnalysis] ⏱️ Tiempo total: ${((finTimestamp - inicioTimestamp) / 1000).toFixed(2)} segundos.`);
-
-      await nextTick();
-
-      // Deep clone the reactive objects to remove the Proxy
-      const resumenPlano = JSON.parse(JSON.stringify(resumen.value));
-      const lighthousePlano = JSON.parse(JSON.stringify(lighthouse.value));
-      const sitemapResultsPlano = JSON.parse(JSON.stringify(sitemapResults.value));
-
-      // Use the router.push() with the cloned data
-      router.push({
-        path: '/resultados',
-        state: {
-          resumen: resumenPlano,
-          lighthouse: lighthousePlano,
-          sitemapResults: sitemapResultsPlano,
-          estado: estado.value
+        const testResponse = await axiosInstance.post('/api/webpagetest/run', { 
+          url: inputUrl 
+        }, {
+          timeout: 60000, // 60 segundos para esta llamada específica
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+        
+        // Verificar si estamos bloqueados
+        if (isBlockedByWebPageTest(testResponse)) {
+          throw new Error('WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.');
         }
-      });
+        
+        const testId = testResponse.data.testId;
+        console.log(`[useSeoAnalysis] ✅ WebPageTest iniciado. ID: ${testId}`);
+
+        progress.value = 20;
+        currentStep.value = 'Obteniendo resultados de WebPageTest...';
+        estado.value = '⏳ Esperando resultados de WebPageTest...';
+
+        // Polling para resultados con reintentos inteligentes
+        let webpagetestResults = null;
+        let pollingAttempts = 0;
+        const maxPollingAttempts = 30; // 10 minutos si el intervalo es 20s
+        
+        while (pollingAttempts < maxPollingAttempts) {
+          const result = await checkWebPageTestResults(testId);
+          
+          if (result.status === 'complete') {
+            webpagetestResults = result.data;
+            break;
+          } else if (result.status === 'error') {
+            throw new Error(`Error en WebPageTest: ${result.message}`);
+          }
+          
+          pollingAttempts++;
+          progress.value = 20 + Math.min(20, (pollingAttempts / maxPollingAttempts) * 20);
+        }
+        
+        if (!webpagetestResults) {
+          throw new Error('Timeout esperando resultados de WebPageTest');
+        }
+        
+        console.log(`[useSeoAnalysis] ✅ WebPageTest resultados:`, webpagetestResults);
+
+        progress.value = 40;
+        currentStep.value = 'Obteniendo resultados de Lighthouse...';
+
+        // Step 2: Lighthouse Results
+        const lighthouseResponse = await axios.get(`/api/lighthouse/results/${testId}`);
+        lighthouse.value = lighthouseResponse.data;
+        console.log(`[useSeoAnalysis] ✅ Lighthouse resultados:`, lighthouse.value);
+
+        const metrics = lighthouse.value?.audits || {};
+        resumen.value = {
+          url: webpagetestResults.url || webpagetestResults.testUrl || null,
+          lcp: metrics['largest-contentful-paint']?.numericValue ?? null,
+          cls: metrics['cumulative-layout-shift']?.numericValue ?? null,
+          tbt: metrics['total-blocking-time']?.numericValue ?? null,
+          fcp: metrics['first-contentful-paint']?.numericValue ?? null,
+          si: metrics['speed-index']?.numericValue ?? null,
+          ttfb: webpagetestResults.TTFB ?? null,
+          loadTime: webpagetestResults.loadTime ?? null,
+          webpagetestUrl: webpagetestResults.detalles ?? null,
+          totalSize: webpagetestResults.totalSize ?? null,
+          requests: webpagetestResults.requests ?? null
+        };
+        console.log(`[useSeoAnalysis] 📈 Core Web Vitals extraídos:`, resumen.value);
+
+        estado.value = '✅ WebPageTest y Lighthouse OK';
+        progress.value = 60;
+
+        // Step 3: Sitemap Analysis
+        console.log(`[useSeoAnalysis] 📊 Analizando Sitemap...`);
+        try {
+          const sitemapResponse = await axios.post('/api/sitemap/analyze', { url: inputUrl });
+          sitemapResults.value = sitemapResponse.data;
+          console.log(`[useSeoAnalysis] ✅ Sitemap resultados:`, sitemapResults.value);
+        } catch (sitemapError) {
+          console.error(`[useSeoAnalysis] ❌ Error analizando Sitemap:`, extractErrorDetails(sitemapError));
+          sitemapResults.value = { error: sitemapError.message };
+        }
+
+        progress.value = 100;
+        currentStep.value = 'Análisis completado';
+        estado.value = '✅ Análisis completo';
+
+        // Step 4: Navigation and passing data
+        const finTimestamp = Date.now();
+        console.log(`[useSeoAnalysis] 🕒 Fin análisis: ${new Date(finTimestamp).toISOString()}`);
+        console.log(`[useSeoAnalysis] ⏱️ Tiempo total: ${((finTimestamp - inicioTimestamp) / 1000).toFixed(2)} segundos.`);
+
+        await nextTick();
+
+        // Deep clone the reactive objects to remove the Proxy
+        const resumenPlano = JSON.parse(JSON.stringify(resumen.value));
+        const lighthousePlano = JSON.parse(JSON.stringify(lighthouse.value));
+        const sitemapResultsPlano = JSON.parse(JSON.stringify(sitemapResults.value));
+
+        // Use the router.push() with the cloned data
+        router.push({
+          path: '/resultados',
+          state: {
+            resumen: resumenPlano,
+            lighthouse: lighthousePlano,
+            sitemapResults: sitemapResultsPlano,
+            estado: estado.value
+          }
+        });
+
+      } catch (error) {
+        console.error('[useSeoAnalysis] ❌ Error iniciando test:', error);
+        if (error.code === 'ECONNABORTED') {
+          throw new Error('La solicitud ha tardado demasiado. Por favor, intente nuevamente.');
+        }
+        throw error;
+      }
 
     } catch (error) {
       console.error(`[useSeoAnalysis] ❌ Error global:`, extractErrorDetails(error));

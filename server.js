@@ -71,59 +71,65 @@ setInterval(() => {
 app.post('/api/webpagetest/run', async (req, res) => {
   try {
     const { url } = req.body;
+
     if (!url) {
-      log('No se proporcionó URL.', 'error');
+      log('❌ No se proporcionó URL.', 'error');
       return res.status(400).json({ success: false, message: 'URL no proporcionada.' });
     }
 
-    log(`URL recibida: ${url}`);
+    log(`[info] URL recibida: ${url}`);
 
     const test = await new Promise((resolve, reject) => {
       wpt.runTest(url, {
-        lighthouse: true,
-        pollResults: 5,
+        location: 'ec2-us-east-1:Chrome.Cable',
+        runs: 1,
         timeout: 600,
         mobile: 0,
         video: 1,
-        location: 'ec2-us-east-1:Chrome.Cable', // Ubicación específica para evitar bloqueos
-        runs: 1, // Limitar a 1 ejecución para reducir carga
+        k: process.env.WPT_API_KEY
       }, (err, data) => {
-        if (err) return reject(err);
+        if (err) {
+          log(`❌ Error iniciando test: ${err}`, 'error');
+          return reject(err);
+        }
         resolve(data);
       });
     });
 
     if (!test || !test.data || !test.data.id) {
-      log('No se pudo iniciar la prueba. Respuesta WPT: ' + JSON.stringify(test), 'error');
+      log(`❌ No se pudo iniciar la prueba. Respuesta WPT: ${JSON.stringify(test)}`, 'error');
       return res.status(500).json({ success: false, message: 'No se pudo iniciar el test.' });
     }
 
     const testId = test.data.id;
     const resultUrl = test.data.summary;
 
-    // Guardar timestamp para limpieza
-    analysisStatus.set(testId, {
+    // Guardar estado inicial
+    analysisStatus.set(testId, { 
       timestamp: Date.now(),
-      status: 'pending'
+      status: 'pending', 
+      resumen: null 
     });
 
-    log(`Test iniciado. Test ID: ${testId}`);
-    log(`URL resultados WebPageTest: ${resultUrl}`);
+    log(`[info] Test iniciado. Test ID: ${testId}`);
+    log(`[info] URL resultados WebPageTest: ${resultUrl}`);
 
-    res.json({
+    // Devolver respuesta en el formato exacto que espera el frontend
+    return res.json({
       success: true,
-      testId: testId,
+      testId,
       resumen: {
         loadTime: null,
         SpeedIndex: null,
         TTFB: null,
-        detalles: resultUrl,
-      }
+        detalles: resultUrl
+      },
+      status: 'pending'
     });
 
   } catch (error) {
-    log(`Error inesperado ejecutando test: ${error.message}`, 'error');
-    res.status(500).json({ success: false, message: 'Error inesperado ejecutando test.' });
+    log(`❌ Error inesperado ejecutando test: ${error}`, 'error');
+    return res.status(500).json({ success: false, message: 'Error inesperado ejecutando test.' });
   }
 });
 
@@ -159,7 +165,9 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
             'Accept': 'application/json',
             'Accept-Language': 'en-US,en;q=0.9',
             'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
+            'Pragma': 'no-cache',
+            'X-WPT-API-Key': process.env.WPT_API_KEY,
+            'Authorization': `Bearer ${process.env.WPT_API_KEY}`
           }
         });
         contentType = response.headers.get("content-type");
@@ -257,7 +265,7 @@ app.get('/api/lighthouse/results/:testId', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Test ID faltante.' });
     }
 
-    const lighthouseUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}&lighthouse=1`;
+    const lighthouseUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}&lighthouse=1&k=${process.env.WPT_API_KEY}`;
     log(`Consultando informe Lighthouse en: ${lighthouseUrl}`);
     
     let lighthouseRetries = 12;
