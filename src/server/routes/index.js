@@ -1,18 +1,7 @@
 import express from 'express';
-import WebPageTest from 'webpagetest';
 import { analyzeSitemap } from '../../services/sitemap.js';
 
 const router = express.Router();
-const wpt = new WebPageTest('https://www.webpagetest.org', process.env.WPT_API_KEY, {
-  timeout: 30000,  // 30 segundos de timeout
-  headers: {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Accept': 'application/json',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache'
-  }
-});
 
 // Función de logging
 function log(message, type = 'info') {
@@ -38,8 +27,8 @@ router.post('/webpagetest/run', async (req, res) => {
     log(`[info] Iniciando test para: ${url}`);
     log(`[debug] API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
 
-    // Llamada directa a la API PRO v1
-    const response = await fetch('https://product.webpagetest.org/api/v1/runtest', {
+    // Llamada directa a la API Pro v1
+    const resp = await fetch('https://product.webpagetest.org/api/v1/test', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -51,20 +40,16 @@ router.post('/webpagetest/run', async (req, res) => {
         location: 'ec2-us-east-1:Chrome.Cable',
         video: true,
         mobile: false,
-        lighthouse: true  // Esto asegura que se genere el informe de Lighthouse
+        lighthouse: true      // si también quieres Lighthouse
       })
     });
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(`WPT Pro error ${response.status}: ${err.statusText || JSON.stringify(err)}`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(`WPT Pro error ${resp.status}: ${err.statusText || JSON.stringify(err)}`);
     }
 
-    const data = await response.json();
-    
-    if (!data || !data.data || !data.data.testId) {
-      throw new Error('No se recibió testId en la respuesta');
-    }
+    const data = await resp.json();
 
     // Guardar estado inicial
     analysisStatus.set(data.data.testId, { 
@@ -78,12 +63,7 @@ router.post('/webpagetest/run', async (req, res) => {
     return res.json({
       success: true,
       testId: data.data.testId,
-      resumen: {
-        loadTime: null,
-        SpeedIndex: null,
-        TTFB: null,
-        detalles: data.data.userUrl || data.data.summary
-      },
+      resumen: { detalles: data.data.summary },
       status: 'pending'
     });
 
