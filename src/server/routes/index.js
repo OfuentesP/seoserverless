@@ -176,29 +176,51 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
 
     log(`[info] Consultando resultados Lighthouse para testId: ${testId}`);
 
-    // Obtener resultados directamente con el parámetro lighthouse=1
-    const response = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`, {
+    // Primero verificar el estado del test principal
+    const statusResponse = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}`, {
       headers: {
         'X-API-Key': process.env.WPT_API_KEY,
         'Accept': 'application/json'
       }
     });
 
-    if (!response.ok) {
-      if (response.status === 404) {
+    if (!statusResponse.ok) {
+      if (statusResponse.status === 404) {
         return res.json({
           success: true,
           status: 'pending',
           message: 'Test en proceso'
         });
       }
-      throw new Error(`Error obteniendo resultados: ${response.status}`);
+      throw new Error(`Error verificando estado del test: ${statusResponse.status}`);
     }
 
-    const data = await response.json();
+    const statusData = await statusResponse.json();
     
-    // Si no hay datos de Lighthouse, el test puede estar aún en proceso
-    if (!data.data?.lighthouse) {
+    // Si el test principal aún está en proceso
+    if (statusData.statusCode === 100 || statusData.statusText?.includes("Testing")) {
+      return res.json({
+        success: true,
+        status: 'pending',
+        message: 'Test en proceso'
+      });
+    }
+
+    // Si el test principal está completo, obtener resultados de Lighthouse
+    const lighthouseResponse = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}/lighthouse`, {
+      headers: {
+        'X-API-Key': process.env.WPT_API_KEY,
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!lighthouseResponse.ok) {
+      throw new Error(`Error obteniendo resultados de Lighthouse: ${lighthouseResponse.status}`);
+    }
+
+    const lighthouseData = await lighthouseResponse.json();
+    
+    if (!lighthouseData || !lighthouseData.data) {
       return res.json({
         success: true,
         status: 'pending',
@@ -211,7 +233,7 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
     return res.json({
       success: true,
       status: 'completed',
-      lighthouse: data.data.lighthouse
+      lighthouse: lighthouseData.data
     });
 
   } catch (error) {
