@@ -176,45 +176,68 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
 
     log(`[info] Consultando resultados Lighthouse para testId: ${testId}`);
 
-    // Usar la API PRO v1 para obtener resultados completos incluyendo Lighthouse
-    const response = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`, {
+    // Primero verificar el estado del test principal
+    const statusResponse = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}`, {
       headers: {
         'X-API-Key': process.env.WPT_API_KEY,
         'Accept': 'application/json'
       }
     });
 
-    if (!response.ok) {
-      // Si el test aún no está completo
-      if (response.status === 404 || response.status === 400) {
+    if (!statusResponse.ok) {
+      if (statusResponse.status === 404) {
         return res.json({
           success: true,
           status: 'pending',
           message: 'Test en proceso'
         });
       }
-      throw new Error(`Error obteniendo resultados: ${response.status}`);
+      throw new Error(`Error verificando estado del test: ${statusResponse.status}`);
     }
 
-    const data = await response.json();
-    log(`[debug] Respuesta completa recibida: ${JSON.stringify(data).substring(0, 200)}...`);
+    const statusData = await statusResponse.json();
+    
+    // Si el test principal está completo, intentar obtener resultados de Lighthouse
+    const lighthouseResponse = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`, {
+      headers: {
+        'X-API-Key': process.env.WPT_API_KEY,
+        'Accept': 'application/json'
+      }
+    });
 
-    // Extraer datos de Lighthouse de la respuesta
-    const lighthouse = data.lighthouse;
-
-    if (!lighthouse) {
-      throw new Error('No se encontraron datos de Lighthouse en la respuesta');
+    if (!lighthouseResponse.ok) {
+      if (lighthouseResponse.status === 404) {
+        return res.json({
+          success: false,
+          status: 'completed',
+          message: 'Test completado pero no se encontraron resultados de Lighthouse'
+        });
+      }
+      throw new Error(`Error obteniendo resultados de Lighthouse: ${lighthouseResponse.status}`);
     }
 
-    log('[info] Lighthouse obtenido correctamente');
-    // Devolver directamente el objeto Lighthouse para que r.value.audits exista
-    return res.json(lighthouse);
+    const data = await lighthouseResponse.json();
+    log(`[debug] Respuesta de Lighthouse recibida para test ${testId}`);
+
+    if (!data.data?.lighthouse) {
+      return res.json({
+        success: false,
+        status: 'completed',
+        message: 'Test completado pero no incluye resultados de Lighthouse'
+      });
+    }
+
+    return res.json({
+      success: true,
+      status: 'completed',
+      lighthouse: data.data.lighthouse
+    });
 
   } catch (error) {
-    log(`[error] Error obteniendo resultados Lighthouse: ${error.message}`);
+    log(`❌ Error inesperado: ${error.message}`, 'error');
     return res.status(500).json({
       success: false,
-      message: 'Error obteniendo resultados de Lighthouse.',
+      message: 'Error inesperado obteniendo resultados de Lighthouse.',
       error: error.message
     });
   }
