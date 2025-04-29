@@ -27,31 +27,32 @@ router.post('/webpagetest/run', async (req, res) => {
     log(`[info] Iniciando test para: ${url}`);
     log(`[debug] API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
 
-    // Llamada a WebPageTest usando GET con querystring
-    const params = new URLSearchParams({
-      url,
-      runs: '1',
-      location: 'ec2-us-east-1:Chrome.Cable',
-      video: 'true',
-      mobile: 'false',
-      f: 'json',
-      lighthouse: '1'
-    });
-
-    const resp = await fetch(`https://www.webpagetest.org/runtest.php?${params.toString()}`, {
+    // Usar la API PRO v1 para iniciar el test
+    const response = await fetch('https://product.webpagetest.org/api/v1/test', {
+      method: 'POST',
       headers: {
-        'X-WPT-API-KEY': process.env.WPT_API_KEY,
+        'X-API-Key': process.env.WPT_API_KEY,
+        'Content-Type': 'application/json',
         'Accept': 'application/json'
-      }
+      },
+      body: JSON.stringify({
+        url,
+        runs: 1,
+        location: 'ec2-us-east-1:Chrome.Cable',
+        video: true,
+        mobile: false,
+        lighthouse: true
+      })
     });
 
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(`WPT error ${resp.status}: ${err.statusText || JSON.stringify(err)}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      log(`❌ Error de WebPageTest: ${response.status} - ${JSON.stringify(errorData)}`, 'error');
+      throw new Error(`Error de WebPageTest: ${response.status}`);
     }
 
-    const data = await resp.json();
-    const testId = data.data?.testId || data.testId;
+    const data = await response.json();
+    const testId = data.testId;
 
     if (!testId) {
       throw new Error('No se recibió testId en la respuesta');
@@ -70,7 +71,7 @@ router.post('/webpagetest/run', async (req, res) => {
       success: true,
       testId: testId,
       resumen: { 
-        detalles: data.data?.userUrl || data.data?.summary || data.userUrl || data.summary 
+        detalles: data.summary || data.userUrl 
       },
       status: 'pending'
     });
@@ -92,98 +93,70 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
     
     if (!testId) {
       log('❌ No se proporcionó testId.', 'error');
-      return res.status(400).json({ success: false, message: 'Test ID faltante.' });
+      return res.status(400).json({ success: false, message: 'TestId no proporcionado.' });
     }
 
-    log(`[info] Consultando resultados para testId: ${testId}`);
+    log(`[info] Consultando resultados para test: ${testId}`);
 
-    // Intentar obtener resultados usando la API PRO v1
-    const response = await fetch(
-      `https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`,
-      {
-        headers: {
-          'X-API-Key': process.env.WPT_API_KEY,
-          'Accept': 'application/json'
-        }
+    // Usar la API PRO v1 para obtener resultados
+    const response = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}`, {
+      headers: {
+        'X-API-Key': process.env.WPT_API_KEY,
+        'Accept': 'application/json'
       }
-    );
+    });
 
     if (!response.ok) {
-      // Si falla la API PRO, intentar con la API legacy
-      log('[info] API PRO no disponible, intentando con API legacy...');
-      const legacyResponse = await fetch(
-        `https://www.webpagetest.org/jsonResult.php?test=${testId}&f=json`,
-        {
-          headers: {
-            'X-WPT-API-KEY': process.env.WPT_API_KEY,
-            'Accept': 'application/json'
-          }
-        }
-      );
-
-      if (!legacyResponse.ok) {
-        const err = await legacyResponse.json().catch(() => ({}));
-        throw new Error(`Error obteniendo resultados: ${legacyResponse.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      log(`❌ Error obteniendo resultados: ${response.status} - ${JSON.stringify(errorData)}`, 'error');
+      
+      // Si el test aún no está completo, devolver estado pending
+      if (response.status === 404 || response.status === 400) {
+        return res.json({
+          success: true,
+          testId,
+          status: 'pending',
+          message: 'Test en proceso'
+        });
       }
-
-      const data = await legacyResponse.json();
-      return processTestResults(data, testId, res);
+      
+      throw new Error(`Error obteniendo resultados: ${response.status}`);
     }
 
     const data = await response.json();
-    return processTestResults(data, testId, res);
+    
+    // Actualizar estado
+    analysisStatus.set(testId, {
+      timestamp: Date.now(),
+      status: 'completed',
+      resumen: data
+    });
+
+    log(`[info] Resultados obtenidos correctamente para: ${testId}`);
+
+    return res.json({
+      success: true,
+      testId,
+      status: 'completed',
+      resumen: {
+        url: data.url,
+        loadTime: data.loadTime,
+        firstByte: data.firstByte,
+        speedIndex: data.speedIndex,
+        visualComplete: data.visualComplete,
+        lighthouse: data.lighthouse || null
+      }
+    });
 
   } catch (error) {
-    log(`❌ Error obteniendo resultados: ${error.message}`, 'error');
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Error obteniendo resultados.',
+    log(`❌ Error inesperado: ${error.message}`, 'error');
+    return res.status(500).json({
+      success: false,
+      message: 'Error inesperado obteniendo resultados.',
       error: error.message
     });
   }
 });
-
-// Función auxiliar para procesar resultados del test
-function processTestResults(data, testId, res) {
-  if (data.statusCode === 100 || data.statusText?.includes("Testing")) {
-    return res.status(202).json({
-      status: 'pending',
-      message: 'El test sigue en proceso. Por favor, espere.',
-      data: data
-    });
-  }
-
-  if (data.statusCode === 200 || data.status === 'complete') {
-    const firstView = data.data?.runs?.['1']?.firstView || {};
-    const resumen = {
-      url: data.data?.url || data.data?.testUrl,
-      loadTime: firstView.loadTime,
-      SpeedIndex: firstView.SpeedIndex,
-      TTFB: firstView.TTFB,
-      totalSize: firstView.bytesIn,
-      requests: firstView.requests,
-      lcp: firstView.largestContentfulPaint,
-      cls: firstView.cumulativeLayoutShift,
-      tbt: firstView.totalBlockingTime,
-      detalles: data.data?.summary || data.data?.userUrl,
-      lighthouse: data.data?.lighthouse || null
-    };
-
-    analysisStatus.set(testId, {
-      timestamp: Date.now(),
-      status: 'complete',
-      resumen
-    });
-
-    return res.json({ status: 'complete', resumen });
-  }
-
-  return res.status(202).json({
-    status: 'pending',
-    message: 'Estado del test desconocido.',
-    data: data
-  });
-}
 
 // ---------------- RUTAS DE LIGHTHOUSE ----------------
 
