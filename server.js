@@ -19,7 +19,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Configuración de WebPageTest
-const wpt = new WebPageTest('https://www.webpagetest.org', {
+const wpt = new WebPageTest('https://product.webpagetest.org', {
   headers: {
     'X-API-Key': process.env.WPT_API_KEY,
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -158,27 +158,34 @@ app.post('/api/webpagetest/run', async (req, res) => {
 
     log(`[info] Iniciando test para: ${url}`);
 
-    // Usar la biblioteca oficial de WebPageTest
-    const testPromise = new Promise((resolve, reject) => {
-      wpt.runTest(url, {
-        connectivity: 'Cable',
-        location: 'ec2-us-east-1:Chrome',
-        runs: 1,
+    const response = await fetch('https://product.webpagetest.org/api/v1/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': process.env.WPT_API_KEY
+      },
+      body: JSON.stringify({ 
+        url, 
+        runs: 1, 
+        location: 'ec2-us-east-1:Chrome.Cable',
         video: true,
         mobile: false
-      }, (err, data) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(data);
-        }
-      });
+      })
     });
 
-    const data = await testPromise;
+    const data = await response.json();
     
     // Log de la respuesta completa para debugging
     log(`[debug] Respuesta WebPageTest: ${JSON.stringify(data)}`, 'info');
+
+    if (!response.ok) {
+      log(`❌ Error de API (${response.status}): ${data.statusText || JSON.stringify(data)}`, 'error');
+      return res.status(response.status).json({ 
+        success: false, 
+        message: data.statusText || 'Error al iniciar el test.',
+        error: data
+      });
+    }
 
     if (!data || !data.data || !data.data.testId) {
       log(`❌ Respuesta inválida: ${JSON.stringify(data)}`, 'error');
@@ -197,7 +204,7 @@ app.post('/api/webpagetest/run', async (req, res) => {
     });
 
     log(`[info] Test iniciado correctamente: ${data.data.testId}`);
-    log(`[info] URL resultados WebPageTest: ${data.data.userUrl}`);
+    log(`[info] URL resultados WebPageTest: ${data.data.summary}`);
 
     return res.json({
       success: true,
@@ -206,7 +213,7 @@ app.post('/api/webpagetest/run', async (req, res) => {
         loadTime: null,
         SpeedIndex: null,
         TTFB: null,
-        detalles: data.data.userUrl
+        detalles: data.data.summary
       },
       status: 'pending'
     });
