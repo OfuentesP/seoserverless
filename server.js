@@ -21,7 +21,7 @@ const __dirname = path.dirname(__filename);
 // Configuración de WebPageTest
 const wpt = new WebPageTest('https://www.webpagetest.org', {
   headers: {
-    'X-WPT-API-KEY': process.env.WPT_API_KEY,
+    'X-API-Key': process.env.WPT_API_KEY,
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
     'Accept': 'application/json',
     'Accept-Language': 'en-US,en;q=0.9',
@@ -234,7 +234,7 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
         const response = await fetch(resultUrl, {
           headers: {
             ...wpt.headers,
-            'X-WPT-API-KEY': process.env.WPT_API_KEY
+            'X-API-Key': process.env.WPT_API_KEY
           }
         });
 
