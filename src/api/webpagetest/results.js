@@ -8,7 +8,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await axios.get(`https://www.webpagetest.org/jsonResult.php?test=${testId}&k=${apiKey}`);
+    const response = await axios.get(`https://www.webpagetest.org/jsonResult.php?test=${testId}&k=${apiKey}`, {
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'X-WPT-API-Key': apiKey,
+        'Authorization': `Bearer ${apiKey}`
+      }
+    });
     const data = response.data;
 
     if (!data || !data.data || !data.data.runs) {

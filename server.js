@@ -1,30 +1,42 @@
-import dotenv from 'dotenv';
-dotenv.config(); // Primero cargar variables de entorno
+import 'dotenv/config'; // <-- Esto permite que lea el .env
 
 import express from 'express';
 import path from 'path';
 import fetch from 'node-fetch';
-import webPageTest from 'webpagetest';
+import WebPageTest from 'webpagetest';
 import cors from 'cors';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { v4 as uuidv4 } from 'uuid';
+import bodyParser from 'body-parser';
 
 // Importar servicios
 import { analyzeSitemap } from './src/services/sitemap.js';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// Configuración de rutas y directorios
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Configuración de WebPageTest
-const wpt = webPageTest('www.webpagetest.org', process.env.WPT_API_KEY);
+const wpt = new WebPageTest('https://www.webpagetest.org', {
+  headers: {
+    'X-WPT-API-KEY': process.env.WPT_API_KEY,
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache'
+  }
+});
 
 // Configuración de logs
-const logDir = './logs';
+const logDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir);
 }
 
-const logStream = fs.createWriteStream(`${logDir}/app.log`, { flags: 'a' });
-const errorStream = fs.createWriteStream(`${logDir}/error.log`, { flags: 'a' });
+const logStream = fs.createWriteStream(path.join(logDir, 'app.log'), { flags: 'a' });
+const errorStream = fs.createWriteStream(path.join(logDir, 'error.log'), { flags: 'a' });
 
 function log(message, type = 'info') {
   const timestamp = new Date().toISOString();
@@ -38,10 +50,14 @@ function log(message, type = 'info') {
   }
 }
 
+// Inicializar Express
+const app = express();
+const PORT = process.env.PORT || 3000;
+
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 // app.use(express.static(path.join(process.cwd(), 'dist')));
 
 // Almacenamiento temporal en memoria para resultados por testId
@@ -58,63 +74,134 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
+// Función para manejar respuestas de WebPageTest
+async function handleWebPageTestResponse(response, testId, testStartTime, retries) {
+  const contentType = response.headers.get("content-type");
+  const elapsedTime = Date.now() - testStartTime;
+
+  if (!contentType || !contentType.includes("application/json")) {
+    log(`Respuesta no-JSON recibida (${Math.floor(elapsedTime/1000)}s)`, 'warn');
+    return {
+      status: 202,
+      body: {
+        status: 'pending',
+        message: 'El test está en proceso. Por favor, espere unos minutos.',
+        elapsedTime: Math.floor(elapsedTime/1000),
+        retriesLeft: retries,
+        testId: testId
+      }
+    };
+  }
+
+  const resultData = await response.json();
+  
+  if (resultData.statusCode === 100 || resultData.statusText?.includes("Testing")) {
+    log(`Test en progreso (${Math.floor(elapsedTime/1000)}s)`);
+    return {
+      status: 202,
+      body: {
+        status: 'pending',
+        message: 'El test sigue en proceso. Por favor, espere.',
+        elapsedTime: Math.floor(elapsedTime/1000),
+        retriesLeft: retries,
+        testId: testId
+      }
+    };
+  }
+
+  if (resultData.statusCode === 200 && resultData.data?.runs) {
+    const firstView = resultData.data.runs['1'].firstView;
+    const resumen = {
+      url: resultData.data.testUrl || null,
+      loadTime: firstView?.loadTime || null,
+      SpeedIndex: firstView?.SpeedIndex || null,
+      TTFB: firstView?.TTFB || null,
+      totalSize: firstView?.bytesIn || null,
+      requests: firstView?.requests || null,
+      lcp: firstView?.largestContentfulPaint || null,
+      cls: firstView?.cumulativeLayoutShift || null,
+      tbt: firstView?.totalBlockingTime || null,
+      detalles: resultData.data.summary,
+      testId: testId,
+    };
+    
+    analysisStatus.set(testId, {
+      timestamp: Date.now(),
+      status: 'complete',
+      resumen
+    });
+    
+    return {
+      status: 200,
+      body: { status: 'complete', resumen }
+    };
+  }
+
+  throw new Error(`Estado inesperado WebPageTest: ${resultData.statusText || resultData.statusCode}`);
+}
+
 // ---------------- RUTA PARA INICIAR TEST ----------------
 app.post('/api/webpagetest/run', async (req, res) => {
   try {
     const { url } = req.body;
+
     if (!url) {
-      log('No se proporcionó URL.', 'error');
+      log('❌ No se proporcionó URL.', 'error');
       return res.status(400).json({ success: false, message: 'URL no proporcionada.' });
     }
 
-    log(`URL recibida: ${url}`);
+    log(`[info] URL recibida: ${url}`);
 
     const test = await new Promise((resolve, reject) => {
       wpt.runTest(url, {
-        lighthouse: true,
-        pollResults: 5,
+        location: 'ec2-us-east-1:Chrome.Cable',
+        runs: 1,
         timeout: 600,
         mobile: 0,
-        video: 1,
-        location: 'ec2-us-east-1:Chrome.Cable', // Ubicación específica para evitar bloqueos
-        runs: 1, // Limitar a 1 ejecución para reducir carga
+        video: 1
       }, (err, data) => {
-        if (err) return reject(err);
+        if (err) {
+          log(`❌ Error iniciando test: ${err}`, 'error');
+          return reject(err);
+        }
         resolve(data);
       });
     });
 
     if (!test || !test.data || !test.data.id) {
-      log('No se pudo iniciar la prueba. Respuesta WPT: ' + JSON.stringify(test), 'error');
+      log(`❌ No se pudo iniciar la prueba. Respuesta WPT: ${JSON.stringify(test)}`, 'error');
       return res.status(500).json({ success: false, message: 'No se pudo iniciar el test.' });
     }
 
     const testId = test.data.id;
     const resultUrl = test.data.summary;
 
-    // Guardar timestamp para limpieza
-    analysisStatus.set(testId, {
+    // Guardar estado inicial
+    analysisStatus.set(testId, { 
       timestamp: Date.now(),
-      status: 'pending'
+      status: 'pending', 
+      resumen: null 
     });
 
-    log(`Test iniciado. Test ID: ${testId}`);
-    log(`URL resultados WebPageTest: ${resultUrl}`);
+    log(`[info] Test iniciado. Test ID: ${testId}`);
+    log(`[info] URL resultados WebPageTest: ${resultUrl}`);
 
-    res.json({
+    // Devolver respuesta en el formato exacto que espera el frontend
+    return res.json({
       success: true,
-      testId: testId,
+      testId,
       resumen: {
         loadTime: null,
         SpeedIndex: null,
         TTFB: null,
-        detalles: resultUrl,
-      }
+        detalles: resultUrl
+      },
+      status: 'pending'
     });
 
   } catch (error) {
-    log(`Error inesperado ejecutando test: ${error.message}`, 'error');
-    res.status(500).json({ success: false, message: 'Error inesperado ejecutando test.' });
+    log(`❌ Error inesperado ejecutando test: ${error}`, 'error');
+    return res.status(500).json({ success: false, message: 'Error inesperado ejecutando test.' });
   }
 });
 
@@ -123,113 +210,71 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
   try {
     const { testId } = req.params;
     if (!testId) {
-      log('No se proporcionó testId.', 'error');
+      log('❌ No se proporcionó testId.', 'error');
       return res.status(400).json({ success: false, message: 'Test ID faltante.' });
     }
 
     const resultUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}`;
-    let response;
-    let contentType;
-    let resultData;
-    let retries = 12;
-    
     const testStartTime = Date.now();
-    const minWaitTime = 60000;
+    const minWaitTime = 90000; // 90 segundos mínimo de espera
+    const maxRetries = 18; // 18 intentos (3 minutos)
+    let retries = maxRetries;
     
     while (retries > 0) {
       const elapsedTime = Date.now() - testStartTime;
+      
+      // Esperar el tiempo mínimo antes de empezar a consultar
       if (elapsedTime < minWaitTime) {
         await new Promise(resolve => setTimeout(resolve, 5000));
         continue;
       }
 
       try {
-        response = await fetch(resultUrl, {
+        const response = await fetch(resultUrl, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            ...wpt.headers,
+            'X-WPT-API-KEY': process.env.WPT_API_KEY
           }
         });
-        contentType = response.headers.get("content-type");
+
+        const result = await handleWebPageTestResponse(response, testId, testStartTime, retries);
         
-        if (contentType && contentType.includes("text/html")) {
-          log(`Esperando verificación de seguridad (${Math.floor(elapsedTime/1000)}s)`);
-          retries--;
-          if (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 10000));
-          }
-          continue;
+        if (result.status === 200) {
+          return res.status(result.status).json(result.body);
         }
         
-        if (contentType && contentType.includes("application/json")) {
-          resultData = await response.json();
-          
-          if (resultData.statusCode === 100 || resultData.statusText?.includes("Testing is in progress")) {
-            log(`Test en progreso (${Math.floor(elapsedTime/1000)}s)`);
-            retries--;
-            if (retries > 0) {
-              await new Promise(resolve => setTimeout(resolve, 10000));
-            }
-            continue;
-          }
-          
-          break;
-        }
-      } catch (error) {
-        log(`Error en intento ${13-retries}: ${error.message}`, 'error');
         retries--;
         if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 10000));
+          await new Promise(resolve => setTimeout(resolve, 15000));
+        } else {
+          return res.status(result.status).json(result.body);
+        }
+        
+      } catch (error) {
+        log(`Error en intento ${maxRetries-retries+1}: ${error.message}`, 'error');
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 15000));
         }
       }
     }
 
-    if (!contentType || !contentType.includes("application/json")) {
-      return res.status(202).json({ 
-        status: 'pending', 
-        message: 'El test está en proceso. Por favor, espere unos minutos.',
-        elapsedTime: Math.floor((Date.now() - testStartTime)/1000),
-        retriesLeft: retries
-      });
-    }
+    // Si llegamos aquí, se agotaron los intentos
+    return res.status(202).json({
+      status: 'pending',
+      message: 'El test sigue en proceso pero se agotaron los intentos de consulta. Por favor, intente más tarde.',
+      elapsedTime: Math.floor((Date.now() - testStartTime)/1000),
+      retriesLeft: 0,
+      testId: testId
+    });
 
-    if (resultData.statusCode === 200 && resultData.data?.runs) {
-      const firstView = resultData.data.runs['1'].firstView;
-      const resumen = {
-        url: resultData.data.testUrl || null,
-        loadTime: firstView?.loadTime || null,
-        SpeedIndex: firstView?.SpeedIndex || null,
-        TTFB: firstView?.TTFB || null,
-        totalSize: firstView?.bytesIn || null,
-        requests: firstView?.requests || null,
-        lcp: firstView?.largestContentfulPaint || null,
-        cls: firstView?.cumulativeLayoutShift || null,
-        tbt: firstView?.totalBlockingTime || null,
-        detalles: resultData.data.summary,
-        testId: testId,
-      };
-      
-      // Actualizar estado en el Map
-      analysisStatus.set(testId, {
-        timestamp: Date.now(),
-        status: 'complete',
-        resumen
-      });
-      
-      return res.status(200).json({ status: 'complete', resumen });
-    } else if (resultData.statusCode === 100) {
-      return res.status(200).json({ 
-        status: 'pending', 
-        message: 'El test sigue en proceso. Por favor, espere.',
-        elapsedTime: Math.floor((Date.now() - testStartTime)/1000),
-        retriesLeft: retries
-      });
-    } else {
-      log(`Estado inesperado WebPageTest: ${resultData.statusText || resultData.statusCode}`, 'error');
-      return res.status(500).json({ success: false, message: 'Error en los resultados del test.' });
-    }
   } catch (error) {
-    log(`Error inesperado trayendo resultados: ${error.message}`, 'error');
-    res.status(500).json({ success: false, message: 'Error trayendo resultados.' });
+    log(`❌ Error inesperado obteniendo resultados: ${error}`, 'error');
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error inesperado obteniendo resultados.',
+      error: error.message
+    });
   }
 });
 
@@ -252,7 +297,12 @@ app.get('/api/lighthouse/results/:testId', async (req, res) => {
       try {
         const response = await fetch(lighthouseUrl, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'X-WPT-API-KEY': process.env.WPT_API_KEY
           }
         });
         
