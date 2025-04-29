@@ -3,7 +3,16 @@ import WebPageTest from 'webpagetest';
 import { analyzeSitemap } from '../../services/sitemap.js';
 
 const router = express.Router();
-const wpt = new WebPageTest('https://www.webpagetest.org', process.env.WPT_API_KEY);
+const wpt = new WebPageTest('https://www.webpagetest.org', process.env.WPT_API_KEY, {
+  timeout: 30000,  // 30 segundos de timeout
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache'
+  }
+});
 
 // Función de logging
 function log(message, type = 'info') {
@@ -27,51 +36,41 @@ router.post('/webpagetest/run', async (req, res) => {
     }
 
     log(`[info] Iniciando test para: ${url}`);
+    log(`[debug] API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
 
-    // Función para intentar iniciar el test
+    // Función para intentar iniciar el test usando la biblioteca oficial
     const runTest = async (retryCount = 0) => {
       try {
-        const response = await fetch('https://www.webpagetest.org/api/v1/test', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': process.env.WPT_API_KEY
-          },
-          body: JSON.stringify({
-            url,
+        const testPromise = new Promise((resolve, reject) => {
+          wpt.runTest(url, {
+            connectivity: 'Cable',
+            location: 'ec2-us-east-1:Chrome',
             runs: 1,
-            location: 'ec2-us-east-1:Chrome.Cable',
             video: true,
-            mobile: false
-          })
+            mobile: false,
+            pollResults: false,
+            firstViewOnly: true,
+            timeout: 30,
+            emulateMobile: false,
+            ignoreSSL: true,
+            disableHTTPHeaders: true,
+            disableScreenshot: true,
+            disableOptimization: true,
+            disableCompatibilityView: true
+          }, (err, data) => {
+            if (err) {
+              log(`[error] Error de WebPageTest: ${err.message}`);
+              reject(err);
+            } else {
+              log(`[debug] Respuesta WebPageTest: ${JSON.stringify(data)}`);
+              resolve(data);
+            }
+          });
         });
 
-        const contentType = response.headers.get('content-type');
-        const responseText = await response.text();
+        const data = await testPromise;
 
-        // Verificar si la respuesta es HTML
-        if (contentType?.includes('text/html') || responseText.includes('<!DOCTYPE html>')) {
-          log(`[warn] Recibida respuesta HTML en intento ${retryCount + 1}`, 'warn');
-          
-          if (retryCount < 2) {
-            log(`[info] Reintentando en 5 segundos...`);
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            return runTest(retryCount + 1);
-          } else {
-            throw new Error('Demasiados intentos fallidos - recibiendo HTML');
-          }
-        }
-
-        // Intentar parsear la respuesta como JSON
-        let data;
-        try {
-          data = JSON.parse(responseText);
-        } catch (e) {
-          log(`[error] Error parseando JSON: ${responseText.substring(0, 200)}...`);
-          throw new Error('Respuesta inválida del servidor');
-        }
-
-        if (!data.data?.testId) {
+        if (!data || !data.data || !data.data.testId) {
           throw new Error('No se recibió testId en la respuesta');
         }
 
