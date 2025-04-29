@@ -151,57 +151,54 @@ app.post('/api/webpagetest/run', async (req, res) => {
       return res.status(400).json({ success: false, message: 'URL no proporcionada.' });
     }
 
-    log(`[info] URL recibida: ${url}`);
+    log(`[info] Iniciando test para: ${url}`);
 
-    const test = await new Promise((resolve, reject) => {
-      wpt.runTest(url, {
+    const response = await fetch('https://www.webpagetest.org/api/v1/test', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': process.env.WPT_API_KEY
+      },
+      body: JSON.stringify({
+        url: url,
         location: 'ec2-us-east-1:Chrome.Cable',
         runs: 1,
-        timeout: 600,
-        mobile: 0,
-        video: 1
-      }, (err, data) => {
-        if (err) {
-          log(`❌ Error iniciando test: ${err}`, 'error');
-          return reject(err);
-        }
-        resolve(data);
-      });
+        mobile: false,
+        video: true
+      })
     });
 
-    if (!test || !test.data || !test.data.id) {
-      log(`❌ No se pudo iniciar la prueba. Respuesta WPT: ${JSON.stringify(test)}`, 'error');
-      return res.status(500).json({ success: false, message: 'No se pudo iniciar el test.' });
+    const data = await response.json();
+
+    if (!data || !data.data || !data.data.testId) {
+      log(`❌ Error al iniciar test: ${JSON.stringify(data)}`, 'error');
+      return res.status(500).json({ success: false, message: 'Error iniciando test.', data });
     }
 
-    const testId = test.data.id;
-    const resultUrl = test.data.summary;
-
     // Guardar estado inicial
-    analysisStatus.set(testId, { 
+    analysisStatus.set(data.data.testId, { 
       timestamp: Date.now(),
       status: 'pending', 
       resumen: null 
     });
 
-    log(`[info] Test iniciado. Test ID: ${testId}`);
-    log(`[info] URL resultados WebPageTest: ${resultUrl}`);
+    log(`[info] Test iniciado correctamente: ${data.data.testId}`);
+    log(`[info] URL resultados WebPageTest: ${data.data.summary}`);
 
-    // Devolver respuesta en el formato exacto que espera el frontend
     return res.json({
       success: true,
-      testId,
+      testId: data.data.testId,
       resumen: {
         loadTime: null,
         SpeedIndex: null,
         TTFB: null,
-        detalles: resultUrl
+        detalles: data.data.summary
       },
       status: 'pending'
     });
 
   } catch (error) {
-    log(`❌ Error inesperado ejecutando test: ${error}`, 'error');
+    log(`❌ Error inesperado: ${error}`, 'error');
     return res.status(500).json({ success: false, message: 'Error inesperado ejecutando test.' });
   }
 });

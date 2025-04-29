@@ -1,6 +1,7 @@
 <template>
   <div class="min-h-screen flex flex-col items-center justify-center p-8 bg-gray-950">
     <h1 class="text-4xl font-bold mb-6 text-white tracking-tight">🔍 SEO20 WebPageTest</h1>
+    <p class="text-gray-400 text-sm mb-6">v1.0.0</p>
 
     <UrlInput :url="url" :loading="cargando" @analizar="handleAnalizar" />
     <EstadoMensaje :estado="estado" />
