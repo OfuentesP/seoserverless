@@ -199,7 +199,10 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
     const response = await fetch(
       `https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`,
       {
-        headers: { 'X-API-Key': process.env.WPT_API_KEY }
+        headers: { 
+          'X-API-Key': process.env.WPT_API_KEY,
+          'Accept': 'application/json'
+        }
       }
     );
 
@@ -209,10 +212,28 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
     }
 
     const json = await response.json();
+    log(`[debug] Respuesta completa: ${JSON.stringify(json).substring(0, 200)}...`);
+
+    // Verificar si el test está completo
+    if (json.statusCode === 100 || (json.statusText && json.statusText.includes("Testing"))) {
+      return res.status(202).json({
+        success: false,
+        status: 'pending',
+        message: 'El test sigue en proceso. Por favor, espere.'
+      });
+    }
+
+    // Verificar que tenemos datos de Lighthouse
+    if (!json.data?.lighthouse) {
+      throw new Error('No se encontraron datos de Lighthouse en la respuesta');
+    }
+
     log('[info] Lighthouse obtenido correctamente via API PRO');
-    
-    // json.data.lighthouse contiene el informe completo
-    return res.json(json.data.lighthouse);
+    return res.json({
+      success: true,
+      status: 'complete',
+      lighthouse: json.data.lighthouse
+    });
 
   } catch (error) {
     log(`[error] Error obteniendo resultados Lighthouse: ${error.message}`);
