@@ -27,6 +27,7 @@
     "sitemap-validator": "^0.5.3",
     "util": "^0.12.5",
     "vue": "^3.4.15",
+    "vue-router": "^4.5.1",
     "webpagetest": "^0.7.6",
     "xml2js": "^0.6.2"
   },
