@@ -19,16 +19,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Configuración de WebPageTest
-const wpt = new WebPageTest('https://product.webpagetest.org', {
-  headers: {
-    'X-API-Key': process.env.WPT_API_KEY,
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Accept': 'application/json',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache'
-  }
-});
+const wpt = new WebPageTest('https://www.webpagetest.org', process.env.WPT_API_KEY);
 
 // Configuración de logs
 const logDir = path.join(__dirname, 'logs');
@@ -159,51 +150,28 @@ app.post('/api/webpagetest/run', async (req, res) => {
     log(`[info] Iniciando test para: ${url}`);
     log(`[debug] Usando API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
 
-    const response = await fetch('https://www.webpagetest.org/api/v1/test', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': process.env.WPT_API_KEY
-      },
-      body: JSON.stringify({
-        url,
+    // Usar la biblioteca oficial de WebPageTest
+    const testPromise = new Promise((resolve, reject) => {
+      wpt.runTest(url, {
+        connectivity: 'Cable',
+        location: 'ec2-us-east-1:Chrome',
         runs: 1,
-        location: 'ec2-us-east-1:Chrome.Cable',
         video: true,
-        mobile: false
-      })
+        mobile: false,
+        pollResults: false
+      }, (err, data) => {
+        if (err) {
+          log(`[error] Error de WebPageTest: ${err.message}`);
+          reject(err);
+        } else {
+          log(`[debug] Respuesta WebPageTest: ${JSON.stringify(data)}`);
+          resolve(data);
+        }
+      });
     });
 
-    // Log de la respuesta HTTP para debugging
-    log(`[debug] Status: ${response.status}`);
-    log(`[debug] Headers: ${JSON.stringify(Object.fromEntries(response.headers))}`);
+    const data = await testPromise;
     
-    const responseText = await response.text();
-    log(`[debug] Response body: ${responseText.substring(0, 200)}...`);
-
-    // Verificar si la respuesta es HTML
-    if (responseText.trim().toLowerCase().startsWith('<!doctype html') || 
-        responseText.trim().toLowerCase().startsWith('<html')) {
-      log('❌ Recibida respuesta HTML en lugar de JSON', 'error');
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Error de autenticación con WebPageTest. Verifica la API Key.',
-        error: 'HTML response received'
-      });
-    }
-
-    // Parsear la respuesta como JSON
-    const data = JSON.parse(responseText);
-    
-    if (!response.ok) {
-      log(`❌ Error de API (${response.status}): ${data.statusText || JSON.stringify(data)}`, 'error');
-      return res.status(response.status).json({ 
-        success: false, 
-        message: data.statusText || 'Error al iniciar el test.',
-        error: data
-      });
-    }
-
     if (!data || !data.data || !data.data.testId) {
       log(`❌ Respuesta inválida: ${JSON.stringify(data)}`, 'error');
       return res.status(500).json({ 
@@ -221,7 +189,7 @@ app.post('/api/webpagetest/run', async (req, res) => {
     });
 
     log(`[info] Test iniciado correctamente: ${data.data.testId}`);
-    log(`[info] URL resultados WebPageTest: ${data.data.summary}`);
+    log(`[info] URL resultados WebPageTest: ${data.data.userUrl}`);
 
     return res.json({
       success: true,
@@ -230,7 +198,7 @@ app.post('/api/webpagetest/run', async (req, res) => {
         loadTime: null,
         SpeedIndex: null,
         TTFB: null,
-        detalles: data.data.summary
+        detalles: data.data.userUrl
       },
       status: 'pending'
     });
