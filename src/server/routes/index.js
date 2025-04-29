@@ -28,38 +28,75 @@ router.post('/webpagetest/run', async (req, res) => {
 
     log(`[info] Iniciando test para: ${url}`);
 
-    const testPromise = new Promise((resolve, reject) => {
-      wpt.runTest(url, {
-        connectivity: 'Cable',
-        location: 'ec2-us-east-1:Chrome',
-        runs: 1,
-        video: true,
-        mobile: false,
-        pollResults: false
-      }, (err, data) => {
-        if (err) {
-          log(`[error] Error de WebPageTest: ${err.message}`);
-          reject(err);
-        } else {
-          resolve(data);
+    // Función para intentar iniciar el test
+    const runTest = async (retryCount = 0) => {
+      try {
+        const response = await fetch('https://www.webpagetest.org/api/v1/test', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': process.env.WPT_API_KEY
+          },
+          body: JSON.stringify({
+            url,
+            runs: 1,
+            location: 'ec2-us-east-1:Chrome.Cable',
+            video: true,
+            mobile: false
+          })
+        });
+
+        const contentType = response.headers.get('content-type');
+        const responseText = await response.text();
+
+        // Verificar si la respuesta es HTML
+        if (contentType?.includes('text/html') || responseText.includes('<!DOCTYPE html>')) {
+          log(`[warn] Recibida respuesta HTML en intento ${retryCount + 1}`, 'warn');
+          
+          if (retryCount < 2) {
+            log(`[info] Reintentando en 5 segundos...`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            return runTest(retryCount + 1);
+          } else {
+            throw new Error('Demasiados intentos fallidos - recibiendo HTML');
+          }
         }
-      });
-    });
 
-    const data = await testPromise;
-    
-    if (!data || !data.data || !data.data.testId) {
-      throw new Error('Respuesta inválida del servidor WebPageTest');
-    }
+        // Intentar parsear la respuesta como JSON
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (e) {
+          log(`[error] Error parseando JSON: ${responseText.substring(0, 200)}...`);
+          throw new Error('Respuesta inválida del servidor');
+        }
 
-    // Guardar estado inicial
-    analysisStatus.set(data.data.testId, { 
-      timestamp: Date.now(),
-      status: 'pending', 
-      resumen: null 
-    });
+        if (!data.data?.testId) {
+          throw new Error('No se recibió testId en la respuesta');
+        }
 
-    log(`[info] Test iniciado correctamente: ${data.data.testId}`);
+        // Guardar estado inicial
+        analysisStatus.set(data.data.testId, { 
+          timestamp: Date.now(),
+          status: 'pending', 
+          resumen: null 
+        });
+
+        log(`[info] Test iniciado correctamente: ${data.data.testId}`);
+        return data;
+
+      } catch (error) {
+        if (retryCount < 2) {
+          log(`[warn] Error en intento ${retryCount + 1}: ${error.message}`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          return runTest(retryCount + 1);
+        }
+        throw error;
+      }
+    };
+
+    // Intentar iniciar el test con reintentos
+    const data = await runTest();
 
     return res.json({
       success: true,
@@ -68,7 +105,7 @@ router.post('/webpagetest/run', async (req, res) => {
         loadTime: null,
         SpeedIndex: null,
         TTFB: null,
-        detalles: data.data.userUrl
+        detalles: data.data.userUrl || data.data.summary
       },
       status: 'pending'
     });
