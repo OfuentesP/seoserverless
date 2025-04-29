@@ -157,12 +157,18 @@ app.post('/api/webpagetest/run', async (req, res) => {
     }
 
     log(`[info] Iniciando test para: ${url}`);
+    log(`[debug] Usando API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
 
     const response = await fetch('https://product.webpagetest.org/api/v1/test', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': process.env.WPT_API_KEY
+        'X-API-Key': process.env.WPT_API_KEY,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
       },
       body: JSON.stringify({ 
         url, 
@@ -173,11 +179,27 @@ app.post('/api/webpagetest/run', async (req, res) => {
       })
     });
 
-    const data = await response.json();
+    // Log de la respuesta HTTP para debugging
+    log(`[debug] Status: ${response.status}`);
+    log(`[debug] Headers: ${JSON.stringify(Object.fromEntries(response.headers))}`);
     
-    // Log de la respuesta completa para debugging
-    log(`[debug] Respuesta WebPageTest: ${JSON.stringify(data)}`, 'info');
+    const responseText = await response.text();
+    log(`[debug] Response body: ${responseText.substring(0, 200)}...`);
 
+    // Verificar si la respuesta es HTML
+    if (responseText.trim().toLowerCase().startsWith('<!doctype html') || 
+        responseText.trim().toLowerCase().startsWith('<html')) {
+      log('❌ Recibida respuesta HTML en lugar de JSON', 'error');
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Error de autenticación con WebPageTest. Verifica la API Key.',
+        error: 'HTML response received'
+      });
+    }
+
+    // Parsear la respuesta como JSON
+    const data = JSON.parse(responseText);
+    
     if (!response.ok) {
       log(`❌ Error de API (${response.status}): ${data.statusText || JSON.stringify(data)}`, 'error');
       return res.status(response.status).json({ 
