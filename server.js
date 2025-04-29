@@ -151,6 +151,11 @@ app.post('/api/webpagetest/run', async (req, res) => {
       return res.status(400).json({ success: false, message: 'URL no proporcionada.' });
     }
 
+    if (!process.env.WPT_API_KEY) {
+      log('❌ API Key no configurada.', 'error');
+      return res.status(500).json({ success: false, message: 'Error de configuración: API Key no encontrada.' });
+    }
+
     log(`[info] Iniciando test para: ${url}`);
 
     const response = await fetch('https://www.webpagetest.org/api/v1/test', {
@@ -169,10 +174,26 @@ app.post('/api/webpagetest/run', async (req, res) => {
     });
 
     const data = await response.json();
+    
+    // Log de la respuesta completa para debugging
+    log(`[debug] Respuesta WebPageTest: ${JSON.stringify(data)}`, 'info');
+
+    if (!response.ok) {
+      log(`❌ Error de API (${response.status}): ${data.statusText || JSON.stringify(data)}`, 'error');
+      return res.status(response.status).json({ 
+        success: false, 
+        message: data.statusText || 'Error al iniciar el test.',
+        error: data
+      });
+    }
 
     if (!data || !data.data || !data.data.testId) {
-      log(`❌ Error al iniciar test: ${JSON.stringify(data)}`, 'error');
-      return res.status(500).json({ success: false, message: 'Error iniciando test.', data });
+      log(`❌ Respuesta inválida: ${JSON.stringify(data)}`, 'error');
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Respuesta inválida del servidor.',
+        error: data 
+      });
     }
 
     // Guardar estado inicial
@@ -198,8 +219,12 @@ app.post('/api/webpagetest/run', async (req, res) => {
     });
 
   } catch (error) {
-    log(`❌ Error inesperado: ${error}`, 'error');
-    return res.status(500).json({ success: false, message: 'Error inesperado ejecutando test.' });
+    log(`❌ Error inesperado: ${error.message}`, 'error');
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error inesperado ejecutando test.',
+      error: error.message
+    });
   }
 });
 
