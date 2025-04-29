@@ -2,6 +2,35 @@ import { ref, computed, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import axios from 'axios';
 
+// Limitar el número de tests simultáneos
+let activeTests = 0;
+const MAX_CONCURRENT_TESTS = 2;
+const POLLING_INTERVAL = 20000; // 20 segundos entre intentos
+
+// Control de rate limiting
+const requestTimestamps = [];
+const MAX_REQUESTS_PER_HOUR = 30; // Limitar a 30 solicitudes por hora
+const HOUR_IN_MS = 60 * 60 * 1000;
+
+// Función para verificar si estamos siendo rate limited
+const isRateLimited = () => {
+  const now = Date.now();
+  const oneHourAgo = now - HOUR_IN_MS;
+  
+  // Limpiar timestamps antiguos
+  while (requestTimestamps.length > 0 && requestTimestamps[0] < oneHourAgo) {
+    requestTimestamps.shift();
+  }
+  
+  // Verificar si hemos excedido el límite
+  return requestTimestamps.length >= MAX_REQUESTS_PER_HOUR;
+};
+
+// Función para registrar una solicitud
+const recordRequest = () => {
+  requestTimestamps.push(Date.now());
+};
+
 export function useSeoAnalysis() {
   const router = useRouter();
   
@@ -26,6 +55,8 @@ export function useSeoAnalysis() {
   const isLoading = ref(false);
   const progress = ref(0);
   const currentStep = ref('');
+  const isBlocked = ref(false);
+  const blockMessage = ref('');
 
   // Computed values for checking errors
   const hasError = computed(() => resumen.value.error !== null);
@@ -33,8 +64,93 @@ export function useSeoAnalysis() {
 
   let inicioTimestamp = null;
 
+  // Función para esperar un tiempo determinado
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // Función para verificar si estamos bloqueados
+  const isBlockedByWebPageTest = (response) => {
+    // Verificar si recibimos una página HTML en lugar de JSON
+    const contentType = response.headers?.['content-type'];
+    if (contentType && contentType.includes('text/html')) {
+      return true;
+    }
+    
+    // Verificar códigos de estado que indican bloqueo
+    if (response.status === 429 || response.status === 403) {
+      return true;
+    }
+    
+    return false;
+  };
+
+  // Función para verificar resultados de WebPageTest con reintentos inteligentes
+  const checkWebPageTestResults = async (testId) => {
+    try {
+      // Verificar rate limiting antes de hacer la solicitud
+      if (isRateLimited()) {
+        const waitTime = HOUR_IN_MS - (Date.now() - requestTimestamps[0]);
+        console.log(`[useSeoAnalysis] ⚠️ Rate limit alcanzado. Esperando ${Math.ceil(waitTime/1000/60)} minutos...`);
+        estado.value = `⏳ Límite de solicitudes alcanzado. Esperando ${Math.ceil(waitTime/1000/60)} minutos...`;
+        await wait(Math.min(waitTime, 300000)); // Esperar máximo 5 minutos
+        return { status: 'pending' };
+      }
+      
+      recordRequest();
+      const response = await axios.get(`/api/webpagetest/results/${testId}`);
+      
+      // Verificar si estamos bloqueados
+      if (isBlockedByWebPageTest(response)) {
+        console.error(`[useSeoAnalysis] ❌ Bloqueado por WebPageTest. Código: ${response.status}`);
+        isBlocked.value = true;
+        blockMessage.value = 'WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.';
+        return { status: 'error', message: 'Bloqueado por WebPageTest' };
+      }
+      
+      if (response.status === 202 || response.data.status === 'pending') {
+        console.log(`[useSeoAnalysis] ⏳ Test en progreso, esperando ${POLLING_INTERVAL/1000} segundos...`);
+        estado.value = `⏳ Test en progreso (${Math.floor((Date.now() - inicioTimestamp)/1000)}s)`;
+        await wait(POLLING_INTERVAL);
+        return { status: 'pending' };
+      }
+
+      if (response.data.status === 'complete') {
+        console.log(`[useSeoAnalysis] ✅ Test completado después de ${Math.floor((Date.now() - inicioTimestamp)/1000)}s`);
+        return { status: 'complete', data: response.data.resumen };
+      }
+
+      return { status: 'error', message: 'Error desconocido' };
+    } catch (error) {
+      console.error('[useSeoAnalysis] ❌ Error checking WebPageTest results:', error);
+      
+      // Verificar si el error es por bloqueo
+      if (error.response && (error.response.status === 429 || error.response.status === 403)) {
+        isBlocked.value = true;
+        blockMessage.value = 'WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.';
+        return { status: 'error', message: 'Bloqueado por WebPageTest' };
+      }
+      
+      return { status: 'error', message: error.message };
+    }
+  };
+
   // The function that handles the analysis of the SEO data
   async function analizar(inputUrl) {
+    // Verificar si ya hay demasiados tests en progreso
+    if (activeTests >= MAX_CONCURRENT_TESTS) {
+      const error = new Error('Demasiados tests en progreso. Por favor, espere a que se complete uno.');
+      console.error(`[useSeoAnalysis] ❌ ${error.message}`);
+      resumen.value.error = error;
+      return;
+    }
+    
+    // Verificar si estamos bloqueados
+    if (isBlocked.value) {
+      const error = new Error(blockMessage.value || 'WebPageTest ha bloqueado temporalmente las solicitudes.');
+      console.error(`[useSeoAnalysis] ❌ ${error.message}`);
+      resumen.value.error = error;
+      return;
+    }
+
     console.log(`[useSeoAnalysis] 🚀 Iniciando análisis para: ${inputUrl}`);
     inicioTimestamp = Date.now();
     console.log(`[useSeoAnalysis] ⏱️ Inicio análisis: ${new Date(inicioTimestamp).toISOString()}`);
@@ -49,9 +165,25 @@ export function useSeoAnalysis() {
     estado.value = '';
 
     try {
+      activeTests++;
+      
       // Step 1: WebPageTest Analysis
       console.log(`[useSeoAnalysis] 📊 Ejecutando WebPageTest...`);
+      
+      // Verificar rate limiting antes de iniciar el test
+      if (isRateLimited()) {
+        const waitTime = HOUR_IN_MS - (Date.now() - requestTimestamps[0]);
+        throw new Error(`Límite de solicitudes alcanzado. Por favor, intente en ${Math.ceil(waitTime/1000/60)} minutos.`);
+      }
+      
+      recordRequest();
       const testResponse = await axios.post('/api/webpagetest/run', { url: inputUrl });
+      
+      // Verificar si estamos bloqueados
+      if (isBlockedByWebPageTest(testResponse)) {
+        throw new Error('WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.');
+      }
+      
       const testId = testResponse.data.testId;
       console.log(`[useSeoAnalysis] ✅ WebPageTest iniciado. ID: ${testId}`);
 
@@ -59,24 +191,29 @@ export function useSeoAnalysis() {
       currentStep.value = 'Obteniendo resultados de WebPageTest...';
       estado.value = '⏳ Esperando resultados de WebPageTest...';
 
-      // Polling para resultados
+      // Polling para resultados con reintentos inteligentes
       let webpagetestResults = null;
       let pollingAttempts = 0;
-      const maxPollingAttempts = 60; // 5 minutos si el intervalo es 5s
+      const maxPollingAttempts = 30; // 10 minutos si el intervalo es 20s
+      
       while (pollingAttempts < maxPollingAttempts) {
-        const response = await axios.get(`/api/webpagetest/results/${testId}`);
-        if (response.data.status === 'complete') {
-          webpagetestResults = response.data.resumen;
+        const result = await checkWebPageTestResults(testId);
+        
+        if (result.status === 'complete') {
+          webpagetestResults = result.data;
           break;
-        } else {
-          estado.value = '⏳ WebPageTest en proceso...';
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          pollingAttempts++;
+        } else if (result.status === 'error') {
+          throw new Error(`Error en WebPageTest: ${result.message}`);
         }
+        
+        pollingAttempts++;
+        progress.value = 20 + Math.min(20, (pollingAttempts / maxPollingAttempts) * 20);
       }
+      
       if (!webpagetestResults) {
         throw new Error('Timeout esperando resultados de WebPageTest');
       }
+      
       console.log(`[useSeoAnalysis] ✅ WebPageTest resultados:`, webpagetestResults);
 
       progress.value = 40;
@@ -155,6 +292,7 @@ export function useSeoAnalysis() {
       estado.value = '❌ Error global en análisis';
     } finally {
       isLoading.value = false;
+      activeTests--;
     }
   }
 
@@ -180,6 +318,8 @@ export function useSeoAnalysis() {
     currentStep,
     hasError,
     errorMessage,
+    isBlocked,
+    blockMessage,
     analizar
   };
 }
