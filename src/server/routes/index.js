@@ -176,56 +176,37 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
 
     log(`[info] Consultando resultados Lighthouse para testId: ${testId}`);
 
-    // Primero verificar el estado del test principal
-    const statusResponse = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}`, {
+    // Obtener resultados directamente con el parámetro lighthouse=1
+    const response = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`, {
       headers: {
         'X-API-Key': process.env.WPT_API_KEY,
         'Accept': 'application/json'
       }
     });
 
-    if (!statusResponse.ok) {
-      if (statusResponse.status === 404) {
+    if (!response.ok) {
+      if (response.status === 404) {
         return res.json({
           success: true,
           status: 'pending',
           message: 'Test en proceso'
         });
       }
-      throw new Error(`Error verificando estado del test: ${statusResponse.status}`);
+      throw new Error(`Error obteniendo resultados: ${response.status}`);
     }
 
-    const statusData = await statusResponse.json();
+    const data = await response.json();
     
-    // Si el test principal está completo, intentar obtener resultados de Lighthouse
-    const lighthouseResponse = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`, {
-      headers: {
-        'X-API-Key': process.env.WPT_API_KEY,
-        'Accept': 'application/json'
-      }
-    });
-
-    if (!lighthouseResponse.ok) {
-      if (lighthouseResponse.status === 404) {
-        return res.json({
-          success: false,
-          status: 'completed',
-          message: 'Test completado pero no se encontraron resultados de Lighthouse'
-        });
-      }
-      throw new Error(`Error obteniendo resultados de Lighthouse: ${lighthouseResponse.status}`);
-    }
-
-    const data = await lighthouseResponse.json();
-    log(`[debug] Respuesta de Lighthouse recibida para test ${testId}`);
-
+    // Si no hay datos de Lighthouse, el test puede estar aún en proceso
     if (!data.data?.lighthouse) {
       return res.json({
-        success: false,
-        status: 'completed',
-        message: 'Test completado pero no incluye resultados de Lighthouse'
+        success: true,
+        status: 'pending',
+        message: 'Resultados de Lighthouse aún no disponibles'
       });
     }
+
+    log(`[info] Resultados Lighthouse obtenidos correctamente para: ${testId}`);
 
     return res.json({
       success: true,
