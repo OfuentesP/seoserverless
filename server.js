@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import pkg from 'uuid';
 const { v4: uuidv4 } = pkg;
 import bodyParser from 'body-parser';
+import router from './src/server/routes/index.js';
 
 // Importar servicios
 import { analyzeSitemap } from './src/services/sitemap.js';
@@ -50,7 +51,12 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
-// app.use(express.static(path.join(process.cwd(), 'dist')));
+
+// Usar el router para /api
+app.use('/api', router);
+
+// Servir archivos estáticos
+app.use(express.static(path.join(process.cwd(), 'dist')));
 
 // Almacenamiento temporal en memoria para resultados por testId
 const analysisStatus = new Map();
@@ -445,7 +451,7 @@ app.get('/api/seo/status/:testId', async (req, res) => {
   res.json(status);
 });
 
-// ---------------- CATCH-ALL PARA FRONTEND ----------------
+// Catch-all para el frontend
 app.get('*', (req, res) => {
   res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
 });
@@ -460,7 +466,7 @@ process.on('unhandledRejection', (reason, promise) => {
   log(`Promesa rechazada no manejada: ${reason}`, 'error');
 });
 
-// ---------------- INICIAR SERVIDOR ----------------
+// Iniciar servidor
 app.listen(PORT, () => {
   log(`Servidor escuchando en http://localhost:${PORT}`);
 });
