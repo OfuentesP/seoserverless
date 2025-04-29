@@ -213,11 +213,8 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
     }
 
     log('[info] Lighthouse obtenido correctamente');
-    return res.json({
-      success: true,
-      status: 'complete',
-      lighthouse: lighthouse
-    });
+    // Devolver directamente el objeto Lighthouse para que r.value.audits exista
+    return res.json(lighthouse);
 
   } catch (error) {
     log(`[error] Error obteniendo resultados Lighthouse: ${error.message}`);
