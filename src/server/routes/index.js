@@ -101,39 +101,41 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
 
     log(`[info] Obteniendo resultados para test ID: ${testId}`);
 
-    let data, isPro = true;
+    // Construir los parámetros para la API legacy
+    const params = new URLSearchParams({
+      test: testId,
+      f: 'json'
+    });
 
-    // Intento API Pro v1 /result/{testId}
-    try {
-      const proResp = await fetch(`https://product.webpagetest.org/api/v1/result/${testId}`, {
-        headers: { 'X-API-Key': process.env.WEBPAGETEST_API_KEY }
-      });
-      if (!proResp.ok) throw new Error(`Pro ${proResp.status}`);
-      data = await proResp.json();
-    } catch (err) {
-      log(`[info] API Pro no disponible (${err.message}), usando legacy free`, 'info');
-      isPro = false;
-      const freeResp = await fetch(`https://www.webpagetest.org/jsonResult.php?test=${testId}&f=json`, {
-        headers: { 'X-API-Key': process.env.WEBPAGETEST_API_KEY }
-      });
-      if (!freeResp.ok) {
-        const errData = await freeResp.json().catch(() => ({}));
-        log(`❌ Error legacy free: ${freeResp.status}`, 'error');
-        return res.status(freeResp.status).json({
-          error: 'Error obteniendo resultados',
-          details: errData
-        });
+    const response = await fetch(`https://www.webpagetest.org/jsonResult.php?${params}`, {
+      method: 'GET',
+      headers: {
+        'X-WPT-API-KEY': process.env.WPT_API_KEY
       }
-      data = await freeResp.json();
+    });
+
+    const responseText = await response.text();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      log(`❌ Error parseando respuesta: ${responseText}`, 'error');
+      return res.status(500).json({
+        error: 'Error parseando respuesta de WebPageTest',
+        details: responseText
+      });
     }
 
-    // Procesar la respuesta (free y Pro tienen estructura similar en data.data)
-    const runs = data.data?.runs?.['1']?.firstView;
-    const isComplete =
-      (isPro && data.status === 'complete') ||
-      (!isPro && data.statusCode === 200);
+    if (!response.ok) {
+      log(`❌ Error obteniendo resultados: ${response.status}`, 'error');
+      return res.status(response.status).json({
+        error: 'Error obteniendo resultados',
+        details: data
+      });
+    }
 
-    if (!isComplete) {
+    // Si el test aún está en proceso
+    if (data.statusCode === 100) {
       return res.json({
         success: true,
         testId,
@@ -142,29 +144,40 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
       });
     }
 
-    // Extraer métricas
-    const fv = runs;
-    const resumen = {
-      url: data.data.testUrl || data.data.url,
-      loadTime: fv.loadTime,
-      SpeedIndex: fv.SpeedIndex,
-      TTFB: fv.TTFB,
-      totalSize: fv.bytesIn,
-      requests: fv.requests,
-      lcp: fv.largestContentfulPaint,
-      cls: fv.cumulativeLayoutShift,
-      tbt: fv.totalBlockingTime,
-      detalles: data.data.summary
-    };
+    // Si el test está completo
+    if (data.statusCode === 200) {
+      // Extraer métricas
+      const fv = data.data.runs['1'].firstView;
+      const resumen = {
+        url: data.data.url,
+        loadTime: fv.loadTime,
+        SpeedIndex: fv.SpeedIndex,
+        TTFB: fv.TTFB,
+        totalSize: fv.bytesIn,
+        requests: fv.requests,
+        lcp: fv.largestContentfulPaint,
+        cls: fv.cumulativeLayoutShift,
+        tbt: fv.totalBlockingTime,
+        detalles: data.data.summary
+      };
 
-    analysisStatus.set(testId, {
-      timestamp: Date.now(),
-      status: 'complete',
-      resumen
-    });
+      analysisStatus.set(testId, {
+        timestamp: Date.now(),
+        status: 'complete',
+        resumen
+      });
 
-    log(`[info] Resultados obtenidos correctamente para: ${testId}`);
-    return res.json({ success: true, testId, status: 'complete', resumen });
+      log(`[info] Resultados obtenidos correctamente para: ${testId}`);
+      return res.json({
+        success: true,
+        testId,
+        status: 'complete',
+        resumen
+      });
+    }
+
+    // Si llegamos aquí, hay un error inesperado
+    throw new Error(`Estado inesperado: ${data.statusCode}`);
 
   } catch (error) {
     log(`❌ Error interno en /webpagetest/results: ${error.message}`, 'error');
