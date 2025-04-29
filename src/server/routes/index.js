@@ -47,24 +47,31 @@ router.post('/webpagetest/run', async (req, res) => {
 
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      throw new Error(`WPT Pro error ${resp.status}: ${err.statusText || JSON.stringify(err)}`);
+      throw new Error(`WPT error ${resp.status}: ${err.statusText || JSON.stringify(err)}`);
     }
 
     const data = await resp.json();
+    const testId = data.data?.testId || data.testId;
+
+    if (!testId) {
+      throw new Error('No se recibió testId en la respuesta');
+    }
 
     // Guardar estado inicial
-    analysisStatus.set(data.data.testId, { 
+    analysisStatus.set(testId, { 
       timestamp: Date.now(),
       status: 'pending', 
       resumen: null 
     });
 
-    log(`[info] Test iniciado correctamente: ${data.data.testId}`);
+    log(`[info] Test iniciado correctamente: ${testId}`);
 
     return res.json({
       success: true,
-      testId: data.data.testId,
-      resumen: { detalles: data.data.userUrl || data.data.summary },
+      testId: testId,
+      resumen: { 
+        detalles: data.data?.userUrl || data.data?.summary || data.userUrl || data.summary 
+      },
       status: 'pending'
     });
 
@@ -90,162 +97,41 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
 
     log(`[info] Consultando resultados para testId: ${testId}`);
 
-    // Esperar un mínimo de tiempo antes de consultar resultados
-    const status = analysisStatus.get(testId);
-    if (status) {
-      const elapsedTime = Date.now() - status.timestamp;
-      if (elapsedTime < 60000) { // Menos de 1 minuto
-        log(`[info] Test aún muy reciente (${Math.floor(elapsedTime/1000)}s), esperando...`);
-        return res.status(202).json({
-          status: 'pending',
-          message: 'El test está en proceso. Por favor, espere al menos 1 minuto.',
-          elapsedTime: Math.floor(elapsedTime/1000)
-        });
+    // Intentar obtener resultados usando la API PRO v1
+    const response = await fetch(
+      `https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`,
+      {
+        headers: {
+          'X-API-Key': process.env.WPT_API_KEY,
+          'Accept': 'application/json'
+        }
       }
+    );
+
+    if (!response.ok) {
+      // Si falla la API PRO, intentar con la API legacy
+      log('[info] API PRO no disponible, intentando con API legacy...');
+      const legacyResponse = await fetch(
+        `https://www.webpagetest.org/jsonResult.php?test=${testId}&f=json`,
+        {
+          headers: {
+            'X-WPT-API-KEY': process.env.WPT_API_KEY,
+            'Accept': 'application/json'
+          }
+        }
+      );
+
+      if (!legacyResponse.ok) {
+        const err = await legacyResponse.json().catch(() => ({}));
+        throw new Error(`Error obteniendo resultados: ${legacyResponse.status}`);
+      }
+
+      const data = await legacyResponse.json();
+      return processTestResults(data, testId, res);
     }
 
-    // Función para intentar obtener resultados con reintentos
-    const getResults = async (retryCount = 0) => {
-      try {
-        // Intentar primero con la API PRO
-        try {
-          log('[debug] Intentando con API PRO...');
-          const proResponse = await fetch(
-            `https://product.webpagetest.org/api/v1/result/${testId}`,
-            {
-              method: 'GET',
-              headers: {
-                'X-API-Key': process.env.WPT_API_KEY,
-                'Accept': 'application/json'
-              }
-            }
-          );
-
-          if (proResponse.ok) {
-            const data = await proResponse.json();
-            log('[info] Respuesta exitosa de API PRO');
-            return { data, isPro: true };
-          }
-        } catch (error) {
-          log(`[debug] API PRO no disponible: ${error.message}`);
-        }
-
-        // Si la API PRO falla, intentar con la API gratuita
-        log('[debug] Intentando con API gratuita...');
-        const response = await fetch(
-          `https://www.webpagetest.org/jsonResult.php?test=${testId}&f=json`,
-          {
-            headers: {
-              'X-WPT-API-KEY': process.env.WPT_API_KEY,
-              'Accept': 'application/json'
-            }
-          }
-        );
-
-        const contentType = response.headers.get('content-type');
-        log(`[debug] Content-Type: ${contentType}`);
-
-        if (!response.ok) {
-          throw new Error(`Error HTTP: ${response.status}`);
-        }
-
-        const responseText = await response.text();
-        
-        // Verificar si la respuesta es HTML
-        if (contentType?.includes('text/html') || responseText.includes('<!DOCTYPE html>')) {
-          if (retryCount < 2) {
-            log(`[warn] Recibida respuesta HTML, reintentando en 5 segundos...`);
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            return getResults(retryCount + 1);
-          }
-          throw new Error('Recibida respuesta HTML después de reintentos');
-        }
-
-        // Intentar parsear como JSON
-        try {
-          const data = JSON.parse(responseText);
-          return { data, isPro: false };
-        } catch (e) {
-          log(`[error] Error parseando JSON: ${e.message}`);
-          throw new Error('Respuesta no es JSON válido');
-        }
-      } catch (error) {
-        if (retryCount < 2) {
-          log(`[warn] Error en intento ${retryCount + 1}: ${error.message}`);
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          return getResults(retryCount + 1);
-        }
-        throw error;
-      }
-    };
-
-    const { data, isPro } = await getResults();
-    
-    // Procesar resultados según el tipo de API
-    if (isPro) {
-      if (data.status === 'complete') {
-        const firstView = data.data.runs['1'].firstView;
-        const resumen = {
-          url: data.data.url,
-          loadTime: firstView.loadTime,
-          SpeedIndex: firstView.SpeedIndex,
-          TTFB: firstView.TTFB,
-          totalSize: firstView.bytesIn,
-          requests: firstView.requests,
-          lcp: firstView.largestContentfulPaint,
-          cls: firstView.cumulativeLayoutShift,
-          tbt: firstView.totalBlockingTime,
-          detalles: data.data.summary
-        };
-
-        analysisStatus.set(testId, {
-          timestamp: Date.now(),
-          status: 'complete',
-          resumen
-        });
-
-        return res.json({ status: 'complete', resumen });
-      } else {
-        return res.status(202).json({
-          status: 'pending',
-          message: 'El test sigue en proceso. Por favor, espere.',
-          data: data
-        });
-      }
-    } else {
-      // API gratuita
-      if (data.statusCode === 200) {
-        const firstView = data.data.runs['1'].firstView;
-        const resumen = {
-          url: data.data.url,
-          loadTime: firstView.loadTime,
-          SpeedIndex: firstView.SpeedIndex,
-          TTFB: firstView.TTFB,
-          totalSize: firstView.bytesIn,
-          requests: firstView.requests,
-          lcp: firstView.largestContentfulPaint,
-          cls: firstView.cumulativeLayoutShift,
-          tbt: firstView.totalBlockingTime,
-          detalles: data.data.summary
-        };
-
-        analysisStatus.set(testId, {
-          timestamp: Date.now(),
-          status: 'complete',
-          resumen
-        });
-
-        return res.json({ status: 'complete', resumen });
-      } else if (data.statusCode === 100) {
-        return res.status(202).json({
-          status: 'pending',
-          message: 'El test sigue en proceso. Por favor, espere.',
-          data: data
-        });
-      }
-    }
-
-    throw new Error(`Estado inesperado: ${data.statusText || data.statusCode}`);
+    const data = await response.json();
+    return processTestResults(data, testId, res);
 
   } catch (error) {
     log(`❌ Error obteniendo resultados: ${error.message}`, 'error');
@@ -256,6 +142,48 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
     });
   }
 });
+
+// Función auxiliar para procesar resultados del test
+function processTestResults(data, testId, res) {
+  if (data.statusCode === 100 || data.statusText?.includes("Testing")) {
+    return res.status(202).json({
+      status: 'pending',
+      message: 'El test sigue en proceso. Por favor, espere.',
+      data: data
+    });
+  }
+
+  if (data.statusCode === 200 || data.status === 'complete') {
+    const firstView = data.data?.runs?.['1']?.firstView || {};
+    const resumen = {
+      url: data.data?.url || data.data?.testUrl,
+      loadTime: firstView.loadTime,
+      SpeedIndex: firstView.SpeedIndex,
+      TTFB: firstView.TTFB,
+      totalSize: firstView.bytesIn,
+      requests: firstView.requests,
+      lcp: firstView.largestContentfulPaint,
+      cls: firstView.cumulativeLayoutShift,
+      tbt: firstView.totalBlockingTime,
+      detalles: data.data?.summary || data.data?.userUrl,
+      lighthouse: data.data?.lighthouse || null
+    };
+
+    analysisStatus.set(testId, {
+      timestamp: Date.now(),
+      status: 'complete',
+      resumen
+    });
+
+    return res.json({ status: 'complete', resumen });
+  }
+
+  return res.status(202).json({
+    status: 'pending',
+    message: 'Estado del test desconocido.',
+    data: data
+  });
+}
 
 // ---------------- RUTAS DE LIGHTHOUSE ----------------
 
