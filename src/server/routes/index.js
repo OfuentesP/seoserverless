@@ -196,43 +196,64 @@ router.get('/lighthouse/results/:testId', async (req, res) => {
 
     log(`[info] Consultando resultados Lighthouse para testId: ${testId}`);
 
-    const response = await fetch(
-      `https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`,
+    // Primero verificar si el test principal está completo
+    const statusResponse = await fetch(
+      `https://www.webpagetest.org/jsonResult.php?test=${testId}`,
       {
-        headers: { 
-          'X-API-Key': process.env.WPT_API_KEY,
+        headers: {
+          'X-WPT-API-KEY': process.env.WPT_API_KEY,
           'Accept': 'application/json'
         }
       }
     );
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(`WPT Pro error ${response.status}: ${err.statusText || JSON.stringify(err)}`);
+    if (!statusResponse.ok) {
+      throw new Error(`Error verificando estado del test: ${statusResponse.status}`);
     }
 
-    const json = await response.json();
-    log(`[debug] Respuesta completa: ${JSON.stringify(json).substring(0, 200)}...`);
-
-    // Verificar si el test está completo
-    if (json.statusCode === 100 || (json.statusText && json.statusText.includes("Testing"))) {
+    const statusData = await statusResponse.json();
+    
+    // Si el test aún no está completo, informar al cliente
+    if (statusData.statusCode === 100 || statusData.statusText?.includes("Testing")) {
       return res.status(202).json({
         success: false,
         status: 'pending',
-        message: 'El test sigue en proceso. Por favor, espere.'
+        message: 'El test principal aún no ha terminado. Por favor, espere.'
       });
     }
 
-    // Verificar que tenemos datos de Lighthouse
-    if (!json.data?.lighthouse) {
+    // Una vez que el test está completo, obtener Lighthouse
+    const lighthouseResponse = await fetch(
+      `https://www.webpagetest.org/jsonResult.php?test=${testId}&lighthouse=1`,
+      {
+        headers: {
+          'X-WPT-API-KEY': process.env.WPT_API_KEY,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    if (!lighthouseResponse.ok) {
+      throw new Error(`Error obteniendo Lighthouse: ${lighthouseResponse.status}`);
+    }
+
+    const json = await lighthouseResponse.json();
+    log(`[debug] Respuesta Lighthouse: ${JSON.stringify(json).substring(0, 200)}...`);
+
+    // Buscar los datos de Lighthouse en diferentes ubicaciones posibles
+    const lighthouse = json.data?.lighthouse || 
+                      json.data?.runs?.['1']?.lighthouse ||
+                      json.data?.runs?.['1']?.lighthouseResult;
+
+    if (!lighthouse) {
       throw new Error('No se encontraron datos de Lighthouse en la respuesta');
     }
 
-    log('[info] Lighthouse obtenido correctamente via API PRO');
+    log('[info] Lighthouse obtenido correctamente');
     return res.json({
       success: true,
       status: 'complete',
-      lighthouse: json.data.lighthouse
+      lighthouse: lighthouse
     });
 
   } catch (error) {
