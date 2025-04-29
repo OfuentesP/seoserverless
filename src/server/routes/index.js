@@ -303,104 +303,38 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
 router.get('/lighthouse/results/:testId', async (req, res) => {
   try {
     const { testId } = req.params;
-    
     if (!testId) {
       return res.status(400).json({ success: false, message: 'Test ID faltante.' });
     }
 
     log(`[info] Consultando resultados Lighthouse para testId: ${testId}`);
 
-    const getLighthouseResults = async (retryCount = 0) => {
-      try {
-        // Intentar primero con API PRO
-        try {
-          log('[debug] Intentando obtener Lighthouse con API PRO...');
-          const proResponse = await fetch(
-            `https://product.webpagetest.org/api/v1/lighthouse/${testId}`,
-            {
-              method: 'GET',
-              headers: {
-                'X-API-Key': process.env.WPT_API_KEY,
-                'Accept': 'application/json'
-              }
-            }
-          );
-
-          if (proResponse.ok) {
-            const data = await proResponse.json();
-            log('[info] Lighthouse obtenido correctamente via API PRO');
-            return data;
-          }
-        } catch (error) {
-          log(`[debug] API PRO no disponible para Lighthouse: ${error.message}`);
+    // Llamada a la API v1 Pro incluyendo lighthouse=1
+    const response = await fetch(
+      `https://product.webpagetest.org/api/v1/result/${testId}?lighthouse=1`,
+      {
+        method: 'GET',
+        headers: {
+          'X-API-Key': process.env.WPT_API_KEY
         }
-
-        // Si falla PRO, intentar con API gratuita
-        log('[debug] Intentando obtener Lighthouse con API gratuita...');
-        const response = await fetch(
-          `https://www.webpagetest.org/jsonResult.php?test=${testId}&lighthouse=1`,
-          {
-            headers: {
-              'X-WPT-API-KEY': process.env.WPT_API_KEY,
-              'Accept': 'application/json',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Error HTTP: ${response.status}`);
-        }
-
-        const contentType = response.headers.get('content-type');
-        log(`[debug] Content-Type Lighthouse: ${contentType}`);
-
-        const responseText = await response.text();
-        
-        // Verificar si es HTML
-        if (contentType?.includes('text/html') || responseText.includes('<!DOCTYPE html>')) {
-          throw new Error('Recibida respuesta HTML en lugar de JSON');
-        }
-
-        // Intentar parsear JSON
-        const data = JSON.parse(responseText);
-
-        // Extraer datos de Lighthouse según la estructura
-        if (data?.data?.lighthouse) {
-          return data.data.lighthouse;
-        } else if (data?.data?.runs?.['1']?.lighthouse) {
-          return data.data.runs['1'].lighthouse;
-        } else if (data?.data?.runs?.['1']?.lighthouseResult) {
-          return data.data.runs['1'].lighthouseResult;
-        }
-
-        throw new Error('No se encontraron datos de Lighthouse en la respuesta');
-
-      } catch (error) {
-        if (retryCount < 2) {
-          log(`[warn] Error en intento ${retryCount + 1} de Lighthouse: ${error.message}`);
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          return getLighthouseResults(retryCount + 1);
-        }
-        throw error;
       }
-    };
+    );
 
-    const lighthouseData = await getLighthouseResults();
-
-    if (!lighthouseData) {
-      return res.status(404).json({
-        success: false,
-        message: 'Resultados de Lighthouse no disponibles.'
-      });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`WPT Pro error ${response.status}: ${err.statusText || JSON.stringify(err)}`);
     }
 
-    return res.json(lighthouseData);
+    const json = await response.json();
+    log('[info] Lighthouse obtenido correctamente via API PRO');
+    
+    // json.data.lighthouse contiene el informe completo
+    return res.json(json.data.lighthouse);
 
   } catch (error) {
     log(`[error] Error obteniendo resultados Lighthouse: ${error.message}`);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: 'Error obteniendo resultados de Lighthouse.',
       error: error.message
     });
