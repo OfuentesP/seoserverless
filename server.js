@@ -159,20 +159,15 @@ app.post('/api/webpagetest/run', async (req, res) => {
     log(`[info] Iniciando test para: ${url}`);
     log(`[debug] Usando API Key: ${process.env.WPT_API_KEY.substring(0, 4)}...`);
 
-    const response = await fetch('https://product.webpagetest.org/api/v1/test', {
+    const response = await fetch('https://www.webpagetest.org/api/v1/test', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': process.env.WPT_API_KEY,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'application/json',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
+        'X-API-Key': process.env.WPT_API_KEY
       },
-      body: JSON.stringify({ 
-        url, 
-        runs: 1, 
+      body: JSON.stringify({
+        url,
+        runs: 1,
         location: 'ec2-us-east-1:Chrome.Cable',
         video: true,
         mobile: false
