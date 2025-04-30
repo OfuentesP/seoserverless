@@ -51,7 +51,7 @@
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Requests</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ resumen.requests ?? 'N/A' }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ Array.isArray(resumen.requests) ? resumen.requests.length : (resumen.requests ?? 'N/A') }}</p>
           </div>
         </div>
         <div class="mt-6">
