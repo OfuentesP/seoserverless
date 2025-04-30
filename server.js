@@ -115,7 +115,7 @@ async function handleWebPageTestResponse(response, testId, testStartTime, retrie
       SpeedIndex: firstView?.SpeedIndex || null,
       TTFB: firstView?.TTFB || null,
       totalSize: firstView?.bytesIn || null,
-      requests: firstView?.requests || null,
+      requests: Array.isArray(firstView?.requests) ? firstView.requests.length : firstView?.requests || null,
       lcp: firstView?.largestContentfulPaint || null,
       cls: firstView?.cumulativeLayoutShift || null,
       tbt: firstView?.totalBlockingTime || null,

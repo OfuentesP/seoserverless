@@ -154,7 +154,7 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
         SpeedIndex: fv.SpeedIndex,
         TTFB: fv.TTFB,
         totalSize: fv.bytesIn,
-        requests: fv.requests,
+        requests: Array.isArray(fv.requests) ? fv.requests.length : fv.requests,
         lcp: fv.largestContentfulPaint,
         cls: fv.cumulativeLayoutShift,
         tbt: fv.totalBlockingTime,
