@@ -51,7 +51,9 @@
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Requests</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ Array.isArray(resumen.requests) ? resumen.requests.length : (resumen.requests ?? 'N/A') }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">
+              {{ Array.isArray(resumenPlano.requests) ? resumenPlano.requests.length : (typeof resumenPlano.requests === 'number' ? resumenPlano.requests : 'N/A') }}
+            </p>
           </div>
         </div>
         <div class="mt-6">
@@ -148,7 +150,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
+import { toRaw } from 'vue';
 import ExportButton from '../components/ExportButton.vue';
 
 // Obtenemos el estado enviado por router.push desde history.state
@@ -159,6 +162,22 @@ const resumen = ref(state.resumen || {});
 const lighthouse = ref(state.lighthouse || { audits: {} });
 const sitemapResults = ref(state.sitemapResults || {});
 const geminiInsight = ref(state.geminiInsight || {});
+
+const resumenPlano = computed(() => {
+  const r = toRaw(resumen.value || resumen);
+
+  // 🔧 Reparar si requests viene como string
+  if (r && typeof r.requests === 'string') {
+    try {
+      r.requests = JSON.parse(r.requests);
+    } catch (e) {
+      console.warn('❌ Error parseando requests:', e);
+      r.requests = [];
+    }
+  }
+
+  return r;
+});
 
 const getMetricColor = (value, type) => {
   if (!value) return 'text-gray-400';
