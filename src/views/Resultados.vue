@@ -78,42 +78,42 @@
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Time to First Byte (TTFB)</p>
             <p class="text-xs text-gray-400 mb-2">¿Qué tan rápido responde tu servidor? Un TTFB bajo mejora la experiencia y el SEO.</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouse.audits['time-to-first-byte']?.numericValue ?? resumen.ttfb) }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouseAudits['time-to-first-byte']?.numericValue ?? resumen.ttfb) }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Start Render</p>
             <p class="text-xs text-gray-400 mb-2">¿Cuándo aparece el primer píxel? Un inicio rápido reduce el rebote.</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouse.audits['render-start']?.numericValue) }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouseAudits['render-start']?.numericValue) }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">First Contentful Paint (FCP)</p>
             <p class="text-xs text-gray-400 mb-2">¿Cuándo se muestra el primer contenido? Impacta la percepción de velocidad.</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouse.audits['first-contentful-paint']?.numericValue) }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouseAudits['first-contentful-paint']?.numericValue) }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Speed Index</p>
             <p class="text-xs text-gray-400 mb-2">¿Qué tan rápido se ve la página completa? Un índice bajo mejora la satisfacción.</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouse.audits['speed-index']?.numericValue) }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouseAudits['speed-index']?.numericValue) }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Largest Contentful Paint (LCP)</p>
             <p class="text-xs text-gray-400 mb-2">¿Cuándo carga el elemento principal? Clave para la percepción de rapidez.</p>
-            <p :class="['text-3xl font-bold', getMetricColor(lighthouse.audits['largest-contentful-paint']?.numericValue, 'lcp')]">
-              {{ formatSeconds(lighthouse.audits['largest-contentful-paint']?.numericValue) }}
+            <p :class="['text-3xl font-bold', getMetricColor(lighthouseAudits['largest-contentful-paint']?.numericValue, 'lcp')]">
+              {{ formatSeconds(lighthouseAudits['largest-contentful-paint']?.numericValue) }}
             </p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Cumulative Layout Shift (CLS)</p>
             <p class="text-xs text-gray-400 mb-2">¿Cuánto se mueve el diseño al cargar? Un CLS bajo evita frustración y pérdida de ventas.</p>
-            <p :class="['text-3xl font-bold', getMetricColor(lighthouse.audits['cumulative-layout-shift']?.numericValue, 'cls')]">
-              {{ formatCLS(lighthouse.audits['cumulative-layout-shift']?.numericValue) }}
+            <p :class="['text-3xl font-bold', getMetricColor(lighthouseAudits['cumulative-layout-shift']?.numericValue, 'cls')]">
+              {{ formatCLS(lighthouseAudits['cumulative-layout-shift']?.numericValue) }}
             </p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Total Blocking Time (TBT)</p>
             <p class="text-xs text-gray-400 mb-2">¿Cuánto tiempo la página no responde? Un TBT bajo mejora la interacción y conversión.</p>
-            <p :class="['text-3xl font-bold', getMetricColor(lighthouse.audits['total-blocking-time']?.numericValue, 'tbt')]">
-              {{ formatSeconds(lighthouse.audits['total-blocking-time']?.numericValue) }}
+            <p :class="['text-3xl font-bold', getMetricColor(lighthouseAudits['total-blocking-time']?.numericValue, 'tbt')]">
+              {{ formatSeconds(lighthouseAudits['total-blocking-time']?.numericValue) }}
             </p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
@@ -125,7 +125,7 @@
       </section>
 
       <!-- Sección Sitemap -->
-      <section class="mb-8">
+      <section class="mb-8" v-if="sitemapData.totalUrls">
         <h2 class="text-2xl font-semibold mb-6 text-white pdf-text flex items-center">
           <span class="mr-3 text-green-400">🌐</span>
           Resultados Sitemap
@@ -133,17 +133,22 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Total URLs</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ sitemapResults.totalUrls ?? 'N/A' }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ sitemapData.totalUrls ?? 'N/A' }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Errores 404</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ sitemapResults.errors404 ?? 'N/A' }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ sitemapData.errors404 ?? 'N/A' }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Última modificación</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ sitemapResults.lastModified ?? 'N/A' }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ sitemapData.lastModified ?? 'N/A' }}</p>
           </div>
         </div>
+      </section>
+
+      <!-- Sección Meta Analysis -->
+      <section class="mb-8">
+        <MetaAnalysis :url="resumen.url" />
       </section>
     </div>
   </div>
@@ -153,6 +158,7 @@
 import { ref, computed } from 'vue';
 import { toRaw } from 'vue';
 import ExportButton from '../components/ExportButton.vue';
+import MetaAnalysis from '../components/MetaAnalysis.vue';
 
 // Obtenemos el estado enviado por router.push desde history.state
 const state = window.history.state || {};
@@ -162,6 +168,10 @@ const resumen = ref(state.resumen || {});
 const lighthouse = ref(state.lighthouse || { audits: {} });
 const sitemapResults = ref(state.sitemapResults || {});
 const geminiInsight = ref(state.geminiInsight || {});
+
+// Computed properties para manejar datos de forma segura
+const lighthouseAudits = computed(() => lighthouse.value?.audits || {});
+const sitemapData = computed(() => sitemapResults.value || {});
 
 const resumenPlano = computed(() => {
   const r = toRaw(resumen.value || resumen);
@@ -269,5 +279,11 @@ a:hover {
     color: #000 !important;
     text-decoration: underline;
   }
+}
+
+/* Corregir el error de -webkit-text-size-adjust */
+.pdf-text {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 </style>

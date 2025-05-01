@@ -1,5 +1,7 @@
 import express from 'express';
 import { analyzeSitemap } from '../../services/sitemap.js';
+import * as cheerio from 'cheerio';
+import axios from 'axios';
 
 const router = express.Router();
 
@@ -280,6 +282,79 @@ router.get('/status/:testId', (req, res) => {
   if (!testId) return res.status(400).json({ error: 'Test ID is required' });
   const status = analysisStatus.get(testId) || { resumen: null, lighthouse: null, sitemapResults: null };
   res.json(status);
+});
+
+// Endpoint para analizar metadatos
+router.get('/analyze-meta', async (req, res) => {
+  try {
+    const { url } = req.query;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL es requerida' });
+    }
+
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; SeoAnalyzer/1.0; +http://localhost)',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3'
+      },
+      timeout: 10000 // 10 segundos de timeout
+    });
+
+    const $ = cheerio.load(response.data);
+
+    // Análisis más detallado de metadatos
+    const metaData = {
+      title: $('title').text().trim(),
+      description: $('meta[name="description"]').attr('content') || '',
+      keywords: $('meta[name="keywords"]').attr('content') || '',
+      robots: $('meta[name="robots"]').attr('content') || '',
+      canonical: $('link[rel="canonical"]').attr('href') || '',
+      // Metadatos adicionales
+      ogTitle: $('meta[property="og:title"]').attr('content') || '',
+      ogDescription: $('meta[property="og:description"]').attr('content') || '',
+      ogImage: $('meta[property="og:image"]').attr('content') || '',
+      twitterCard: $('meta[name="twitter:card"]').attr('content') || '',
+      twitterTitle: $('meta[name="twitter:title"]').attr('content') || '',
+      viewport: $('meta[name="viewport"]').attr('content') || '',
+      charset: $('meta[charset]').attr('charset') || $('meta[http-equiv="Content-Type"]').attr('content') || '',
+      language: $('html').attr('lang') || ''
+    };
+
+    // Análisis de longitudes
+    const analysis = {
+      titleLength: metaData.title.length,
+      descriptionLength: metaData.description.length,
+      titleStatus: metaData.title.length >= 30 && metaData.title.length <= 60 ? 'optimal' : 'needs-review',
+      descriptionStatus: metaData.description.length >= 120 && metaData.description.length <= 160 ? 'optimal' : 'needs-review',
+      hasSocialMeta: Boolean(metaData.ogTitle || metaData.twitterCard),
+      hasCanonical: Boolean(metaData.canonical),
+      hasLanguage: Boolean(metaData.language),
+      hasViewport: Boolean(metaData.viewport)
+    };
+
+    res.json({
+      url,
+      metaData,
+      analysis,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error analyzing meta data:', error);
+    const errorMessage = error.response 
+      ? `Error ${error.response.status}: ${error.response.statusText}`
+      : error.code === 'ECONNABORTED'
+      ? 'Timeout al intentar acceder a la URL'
+      : 'Error al analizar los metadatos';
+
+    res.status(500).json({ 
+      error: errorMessage,
+      url: req.query.url,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Limpieza periódica de resultados antiguos (cada hora)
