@@ -423,13 +423,36 @@ export function useSeoAnalysis() {
       console.log('[useSeoAnalysis] Lighthouse recibido:', data);
 
       if (data.lighthouse) {
-        lighthouse.value = data.lighthouse;
+        // Normalizar la estructura de datos de Lighthouse
+        const normalizedLighthouse = {
+          categories: data.lighthouse.categories || {},
+          audits: {}
+        };
+
+        // Normalizar los audits
+        if (data.lighthouse.audits) {
+          Object.entries(data.lighthouse.audits).forEach(([key, audit]) => {
+            if (audit && typeof audit === 'object') {
+              normalizedLighthouse.audits[key] = {
+                id: audit.id || key,
+                title: audit.title || key,
+                description: audit.description || '',
+                score: audit.score !== undefined ? audit.score : null,
+                numericValue: audit.numericValue,
+                displayValue: audit.displayValue,
+                details: audit.details
+              };
+            }
+          });
+        }
+
+        lighthouse.value = normalizedLighthouse;
 
         // Extraer Core Web Vitals de los audits normalizados
-        if (data.lighthouse.audits) {
-          const lcp = data.lighthouse.audits['largest-contentful-paint']?.numericValue;
-          const cls = data.lighthouse.audits['cumulative-layout-shift']?.numericValue;
-          const tbt = data.lighthouse.audits['total-blocking-time']?.numericValue;
+        if (normalizedLighthouse.audits) {
+          const lcp = normalizedLighthouse.audits['largest-contentful-paint']?.numericValue;
+          const cls = normalizedLighthouse.audits['cumulative-layout-shift']?.numericValue;
+          const tbt = normalizedLighthouse.audits['total-blocking-time']?.numericValue;
 
           console.log('[useSeoAnalysis] Core Web Vitals extraídos:', { lcp, cls, tbt });
 
