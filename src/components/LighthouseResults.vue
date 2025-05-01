@@ -66,13 +66,24 @@ import { computed } from 'vue';
 const props = defineProps({
   lighthouse: {
     type: Object,
-    required: true
+    required: true,
+    default: () => ({
+      categories: {},
+      audits: {}
+    })
   }
 });
 
 const coreWebVitals = computed(() => {
-  if (!props.lighthouse?.audits) {
-    console.warn('Lighthouse audits is undefined or null');
+  console.log('Lighthouse data in component:', props.lighthouse);
+  
+  if (!props.lighthouse || typeof props.lighthouse !== 'object') {
+    console.warn('Lighthouse prop is invalid:', props.lighthouse);
+    return [];
+  }
+
+  if (!props.lighthouse.audits || typeof props.lighthouse.audits !== 'object') {
+    console.warn('Lighthouse audits is invalid:', props.lighthouse.audits);
     return [];
   }
   
@@ -102,23 +113,28 @@ const coreWebVitals = computed(() => {
 
   return metrics.map(metric => {
     const audit = props.lighthouse.audits[metric.id];
+    if (!audit) {
+      console.warn(`Audit not found for metric ${metric.id}`);
+      return null;
+    }
     return {
       ...metric,
-      value: audit?.numericValue,
-      score: audit?.score
+      value: audit.numericValue,
+      score: audit.score
     };
-  }).filter(metric => metric.value !== undefined);
+  }).filter(metric => metric !== null && metric.value !== undefined);
 });
 
 const performanceOpportunities = computed(() => {
-  if (!props.lighthouse?.audits) {
-    console.warn('Lighthouse audits is undefined or null');
+  if (!props.lighthouse || !props.lighthouse.audits) {
+    console.warn('Lighthouse audits is invalid');
     return [];
   }
   
   return Object.values(props.lighthouse.audits)
     .filter(audit => 
       audit && 
+      typeof audit === 'object' &&
       audit.score !== undefined && 
       audit.score < 0.9 && 
       audit.details?.type === 'opportunity'

@@ -423,14 +423,26 @@ export function useSeoAnalysis() {
       console.log('[useSeoAnalysis] Lighthouse raw data:', JSON.stringify(data, null, 2));
 
       if (data.lighthouse) {
-        // Normalizar la estructura de datos de Lighthouse
+        // Asegurar que la estructura base existe
         const normalizedLighthouse = {
-          categories: data.lighthouse.categories || {},
+          categories: {},
           audits: {}
         };
 
-        // Normalizar los audits
-        if (data.lighthouse.audits) {
+        // Normalizar categorías
+        if (data.lighthouse.categories && typeof data.lighthouse.categories === 'object') {
+          Object.entries(data.lighthouse.categories).forEach(([key, category]) => {
+            if (category && typeof category === 'object') {
+              normalizedLighthouse.categories[key] = {
+                score: category.score !== undefined ? category.score : null,
+                title: category.title || key
+              };
+            }
+          });
+        }
+
+        // Normalizar audits
+        if (data.lighthouse.audits && typeof data.lighthouse.audits === 'object') {
           Object.entries(data.lighthouse.audits).forEach(([key, audit]) => {
             if (audit && typeof audit === 'object') {
               normalizedLighthouse.audits[key] = {
