@@ -203,20 +203,65 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
       }
       log(`[debug] LCP extraído: ${lcp} (fuente: ${lcpSource})`);
 
-      // Log detallado de campos LCP
-      log(`[debug] Campos LCP disponibles:`, {
-        directLCP: fv.LCP,
-        largestContentfulPaint: fv.largestContentfulPaint,
-        largest_contentful_paint: fv.largest_contentful_paint,
-        chromeUserTiming: fv.chromeUserTiming?.find(t => t.name === 'LargestContentfulPaint'),
-        chromeUserTimingDot: fv['chromeUserTiming.LargestContentfulPaint'],
-        largestPaints: Array.isArray(fv.largestPaints) ? fv.largestPaints[0] : undefined
+      // Extracción robusta de CLS
+      let cls = null;
+      let clsSource = null;
+
+      // 1. Primero intentar obtener de campos directos
+      if (typeof fv.CLS !== 'undefined') {
+        cls = fv.CLS;
+        clsSource = 'direct.CLS';
+      } else if (typeof fv.cumulativeLayoutShift !== 'undefined') {
+        cls = fv.cumulativeLayoutShift;
+        clsSource = 'direct.cumulativeLayoutShift';
+      }
+
+      // 2. Buscar en chromeUserTiming array
+      if (cls === null && Array.isArray(fv.chromeUserTiming)) {
+        const clsTiming = fv.chromeUserTiming.find(t => t.name === 'CumulativeLayoutShift');
+        if (clsTiming && typeof clsTiming.value !== 'undefined') {
+          cls = clsTiming.value;
+          clsSource = 'chromeUserTiming.array.CumulativeLayoutShift';
+        } else {
+          const tlsTiming = fv.chromeUserTiming.find(t => t.name === 'TotalLayoutShift');
+          if (tlsTiming && typeof tlsTiming.value !== 'undefined') {
+            cls = tlsTiming.value;
+            clsSource = 'chromeUserTiming.array.TotalLayoutShift';
+          }
+        }
+      }
+
+      // 3. Intentar con notación de punto
+      if (cls === null) {
+        if (typeof fv['chromeUserTiming.CumulativeLayoutShift'] !== 'undefined') {
+          cls = fv['chromeUserTiming.CumulativeLayoutShift'];
+          clsSource = 'chromeUserTiming.dot.CumulativeLayoutShift';
+        } else if (typeof fv['chromeUserTiming.TotalLayoutShift'] !== 'undefined') {
+          cls = fv['chromeUserTiming.TotalLayoutShift'];
+          clsSource = 'chromeUserTiming.dot.TotalLayoutShift';
+        }
+      }
+
+      // Asegurar que cls sea un número y tenga 4 decimales
+      if (cls !== null) {
+        cls = Number(cls).toFixed(4);
+      }
+
+      log(`[debug] CLS extraído: ${cls} (fuente: ${clsSource})`);
+
+      // Log detallado de campos CLS
+      log(`[debug] Campos CLS disponibles:`, {
+        directCLS: fv.CLS,
+        cumulativeLayoutShift: fv.cumulativeLayoutShift,
+        chromeUserTimingArray: fv.chromeUserTiming?.find(t => t.name === 'CumulativeLayoutShift')?.value,
+        chromeUserTimingDotCLS: fv['chromeUserTiming.CumulativeLayoutShift'],
+        chromeUserTimingDotTLS: fv['chromeUserTiming.TotalLayoutShift']
       });
 
       // Log extra para ver si existen los campos avanzados
       log(`[debug] Métricas avanzadas:`, {
         lcp,
-        cls: fv.CLS || fv.cumulativeLayoutShift || fv.cumulative_layout_shift || fv.vitals?.cls,
+        cls,
         tbt: fv.TBT || fv.totalBlockingTime || fv.total_blocking_time
       });
 
@@ -229,7 +274,7 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
         requests: Array.isArray(fv.requests) ? fv.requests.length : fv.requests,
         fcp: fv.firstContentfulPaint || fv.first_contentful_paint,
         lcp,
-        cls: fv.CLS || fv.cumulativeLayoutShift || fv.cumulative_layout_shift || fv.vitals?.cls,
+        cls,
         tbt: fv.TBT || fv.totalBlockingTime || fv.total_blocking_time,
         detalles: data.data.summary,
         testId
