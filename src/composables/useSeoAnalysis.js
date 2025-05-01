@@ -273,9 +273,9 @@ export function useSeoAnalysis() {
         let lighthouseRetries = 12; // 1 minuto de intentos (12x5s)
         
         while (lighthouseRetries > 0) {
-          const lighthouseResponse = await axios.get(`/api/lighthouse/results/${testId}`);
-          if (lighthouseResponse.data.status === 'completed' && lighthouseResponse.data.lighthouse) {
-            lighthouseData = lighthouseResponse.data.lighthouse;
+          const lighthouseResponse = await obtenerLighthouseDesdeBackend(testId);
+          if (lighthouseResponse) {
+            lighthouseData = lighthouse.value;
             break;
           }
           console.log(`[useSeoAnalysis] ⏳ Lighthouse aún no está listo (${lighthouseRetries} intentos restantes)`);
@@ -406,6 +406,61 @@ export function useSeoAnalysis() {
     } finally {
       isLoading.value = false;
       activeTests--;
+    }
+  }
+
+  async function obtenerLighthouseDesdeBackend(testId) {
+    console.log('[useSeoAnalysis] Obteniendo resultados de Lighthouse para testId:', testId);
+    try {
+      estado.value = '🔍 Obteniendo resultados de Lighthouse...';
+      const response = await axios.get(`/api/lighthouse/results/${testId}`);
+      
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Error obteniendo resultados de Lighthouse');
+      }
+
+      const data = response.data;
+      console.log('[useSeoAnalysis] Lighthouse recibido:', data);
+
+      if (data.lighthouse) {
+        lighthouse.value = data.lighthouse;
+
+        // Extraer Core Web Vitals de los audits normalizados
+        if (data.lighthouse.audits) {
+          const lcp = data.lighthouse.audits['largest-contentful-paint']?.numericValue;
+          const cls = data.lighthouse.audits['cumulative-layout-shift']?.numericValue;
+          const tbt = data.lighthouse.audits['total-blocking-time']?.numericValue;
+
+          console.log('[useSeoAnalysis] Core Web Vitals extraídos:', { lcp, cls, tbt });
+
+          // Asignar Core Web Vitals al resumen
+          if (resumen.value) {
+            resumen.value = {
+              ...resumen.value,
+              lcp,
+              cls,
+              tbt
+            };
+            console.log('[useSeoAnalysis] Core Web Vitals asignados al resumen:', resumen.value);
+          } else {
+            console.warn('[useSeoAnalysis] No se pudo asignar Core Web Vitals: resumen es null');
+          }
+        } else {
+          console.warn('[useSeoAnalysis] No se encontraron audits en el informe de Lighthouse');
+        }
+
+        console.log('[useSeoAnalysis] Lighthouse completo:', lighthouse.value);
+        estado.value = '✅ Análisis completado.';
+        return true;
+      } else {
+        console.warn('[useSeoAnalysis] Respuesta de Lighthouse no contiene datos');
+        estado.value = '⚠️ No se pudieron obtener resultados de Lighthouse.';
+        return false;
+      }
+    } catch (error) {
+      console.error('[useSeoAnalysis] Error obteniendo Lighthouse:', error);
+      estado.value = '❌ Error obteniendo resultados de Lighthouse.';
+      return false;
     }
   }
 

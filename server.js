@@ -293,48 +293,23 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
 app.get('/api/lighthouse/results/:testId', async (req, res) => {
   try {
     const { testId } = req.params;
-    if (!testId) {
-      log('No se proporcionó testId.', 'error');
-      return res.status(400).json({ success: false, message: 'Test ID faltante.' });
-    }
-
-    const lighthouseUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}&lighthouse=1`;
-    log(`Consultando informe Lighthouse en: ${lighthouseUrl}`);
-    
-    let lighthouseRetries = 12;
     let lighthouseData = null;
+    let lighthouseRetries = 12;
+    const log = (message, type = 'info') => console.log(`[Lighthouse] ${message}`);
 
     while (lighthouseRetries > 0) {
       try {
-        const response = await fetch(lighthouseUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-            'X-WPT-API-KEY': process.env.WPT_API_KEY
-          }
-        });
-        
-        if (response.headers.get("content-type")?.includes("text/html")) {
-          log('Recibida página HTML en lugar de JSON. Posible verificación de seguridad.', 'error');
-          lighthouseRetries--;
-          if (lighthouseRetries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 10000));
-          }
-          continue;
-        }
-        
+        const response = await fetch(`${process.env.WEBPAGETEST_API_URL}/${testId}?f=json`);
         const data = await response.json();
 
+        // Try to get Lighthouse data from different possible structures
         if (data?.data?.lighthouse) {
           lighthouseData = data.data.lighthouse;
-          log('Lighthouse recibido correctamente.');
+          log('Lighthouse recibido correctamente (formato directo).');
           break;
         } else if (data?.data?.runs?.['1']?.lighthouse) {
           lighthouseData = data.data.runs['1'].lighthouse;
-          log('Lighthouse recibido correctamente (formato alternativo).');
+          log('Lighthouse recibido correctamente (formato runs).');
           break;
         } else if (data?.data?.runs?.['1']?.lighthouseResult) {
           lighthouseData = data.data.runs['1'].lighthouseResult;
@@ -356,43 +331,82 @@ app.get('/api/lighthouse/results/:testId', async (req, res) => {
 
     if (!lighthouseData) {
       log('No se pudo obtener Lighthouse.', 'error');
-      return res.status(500).json({ success: false, message: 'No se pudo obtener Lighthouse.' });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'No se pudo obtener Lighthouse.',
+        error: 'LIGHTHOUSE_DATA_NOT_AVAILABLE'
+      });
     }
 
-    // Asegurarse de que la estructura de Lighthouse sea consistente
-    if (!lighthouseData.categories && lighthouseData.audits) {
-      const categories = {};
-      const audits = lighthouseData.audits;
-      
-      Object.keys(audits).forEach(key => {
-        const audit = audits[key];
-        if (audit.group) {
-          if (!categories[audit.group]) {
-            categories[audit.group] = {
-              score: 0,
-              title: audit.group
-            };
-          }
+    // Ensure the Lighthouse data has the expected structure
+    const normalizedData = {
+      categories: {},
+      audits: {}
+    };
+
+    // Normalize categories if they exist
+    if (lighthouseData.categories) {
+      normalizedData.categories = lighthouseData.categories;
+    } else if (lighthouseData.audits) {
+      // Create categories from audits if needed
+      const categoryMap = {
+        'performance': ['first-contentful-paint', 'speed-index', 'largest-contentful-paint', 'interactive', 'total-blocking-time'],
+        'accessibility': ['aria-*', 'color-contrast', 'heading-order'],
+        'best-practices': ['https', 'doctype', 'charset'],
+        'seo': ['viewport', 'robots-txt', 'canonical']
+      };
+
+      Object.entries(categoryMap).forEach(([category, auditTypes]) => {
+        const relevantAudits = Object.values(lighthouseData.audits)
+          .filter(audit => auditTypes.some(type => 
+            audit.id?.includes(type) || audit.group?.includes(type)
+          ));
+
+        if (relevantAudits.length > 0) {
+          const avgScore = relevantAudits.reduce((sum, audit) => 
+            sum + (audit.score || 0), 0) / relevantAudits.length;
+
+          normalizedData.categories[category] = {
+            score: avgScore,
+            title: category.charAt(0).toUpperCase() + category.slice(1)
+          };
         }
       });
-      
-      lighthouseData.categories = categories;
-      log('Estructura de Lighthouse reorganizada.');
     }
 
-    // Actualizar estado en el Map
-    const status = analysisStatus.get(testId) || {};
-    analysisStatus.set(testId, {
-      ...status,
-      timestamp: Date.now(),
-      lighthouse: lighthouseData
-    });
+    // Normalize audits
+    if (lighthouseData.audits) {
+      normalizedData.audits = Object.entries(lighthouseData.audits)
+        .reduce((acc, [key, audit]) => {
+          if (audit && typeof audit === 'object') {
+            acc[key] = {
+              id: audit.id || key,
+              title: audit.title || key,
+              description: audit.description || '',
+              score: audit.score !== undefined ? audit.score : null,
+              numericValue: audit.numericValue,
+              displayValue: audit.displayValue,
+              details: audit.details
+            };
+          }
+          return acc;
+        }, {});
+    }
+
+    log('Estructura de datos normalizada correctamente.');
     
-    res.json(lighthouseData);
+    return res.json({ 
+      success: true,
+      lighthouse: normalizedData
+    });
 
   } catch (error) {
-    log(`Error inesperado trayendo resultados de Lighthouse: ${error.message}`, 'error');
-    res.status(500).json({ success: false, message: 'Error trayendo resultados de Lighthouse.' });
+    console.error('[Lighthouse] Error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Error procesando resultados de Lighthouse',
+      error: error.message 
+    });
   }
 });
 
