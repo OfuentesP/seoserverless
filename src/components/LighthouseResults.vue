@@ -61,7 +61,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 
 const props = defineProps({
   lighthouse: {
@@ -74,16 +74,24 @@ const props = defineProps({
   }
 });
 
-const coreWebVitals = computed(() => {
-  console.log('Lighthouse data in component:', props.lighthouse);
-  
-  if (!props.lighthouse || typeof props.lighthouse !== 'object') {
-    console.warn('Lighthouse prop is invalid:', props.lighthouse);
-    return [];
-  }
+// Agregar un watcher para depuración
+watch(() => props.lighthouse, (newVal) => {
+  console.log('Lighthouse prop changed:', JSON.stringify(newVal, null, 2));
+}, { immediate: true, deep: true });
 
-  if (!props.lighthouse.audits || typeof props.lighthouse.audits !== 'object') {
-    console.warn('Lighthouse audits is invalid:', props.lighthouse.audits);
+// Función para validar la estructura de Lighthouse
+const validateLighthouseStructure = (data) => {
+  if (!data) return false;
+  if (typeof data !== 'object') return false;
+  if (!data.audits || typeof data.audits !== 'object') return false;
+  return true;
+};
+
+const coreWebVitals = computed(() => {
+  console.log('Computing coreWebVitals with lighthouse:', JSON.stringify(props.lighthouse, null, 2));
+  
+  if (!validateLighthouseStructure(props.lighthouse)) {
+    console.warn('Invalid Lighthouse structure:', props.lighthouse);
     return [];
   }
   
@@ -111,35 +119,67 @@ const coreWebVitals = computed(() => {
     }
   ];
 
-  return metrics.map(metric => {
+  const result = metrics.map(metric => {
     const audit = props.lighthouse.audits[metric.id];
-    if (!audit) {
-      console.warn(`Audit not found for metric ${metric.id}`);
+    console.log(`Processing metric ${metric.id}:`, audit);
+    
+    if (!audit || typeof audit !== 'object') {
+      console.warn(`Invalid audit for metric ${metric.id}:`, audit);
       return null;
     }
+
+    const value = audit.numericValue;
+    const score = audit.score;
+
+    if (value === undefined && score === undefined) {
+      console.warn(`No valid data for metric ${metric.id}`);
+      return null;
+    }
+
     return {
       ...metric,
-      value: audit.numericValue,
-      score: audit.score
+      value,
+      score
     };
-  }).filter(metric => metric !== null && metric.value !== undefined);
+  }).filter(metric => metric !== null);
+
+  console.log('Computed coreWebVitals:', result);
+  return result;
 });
 
 const performanceOpportunities = computed(() => {
-  if (!props.lighthouse || !props.lighthouse.audits) {
-    console.warn('Lighthouse audits is invalid');
+  console.log('Computing performanceOpportunities with lighthouse:', JSON.stringify(props.lighthouse, null, 2));
+  
+  if (!validateLighthouseStructure(props.lighthouse)) {
+    console.warn('Invalid Lighthouse structure:', props.lighthouse);
     return [];
   }
   
-  return Object.values(props.lighthouse.audits)
+  const result = Object.entries(props.lighthouse.audits)
+    .map(([id, audit]) => {
+      if (!audit || typeof audit !== 'object') {
+        console.warn(`Invalid audit found: ${id}`, audit);
+        return null;
+      }
+
+      return {
+        id,
+        title: audit.title || id,
+        description: audit.description || '',
+        score: audit.score,
+        details: audit.details
+      };
+    })
     .filter(audit => 
-      audit && 
-      typeof audit === 'object' &&
+      audit !== null && 
       audit.score !== undefined && 
       audit.score < 0.9 && 
       audit.details?.type === 'opportunity'
     )
     .sort((a, b) => a.score - b.score);
+
+  console.log('Computed performanceOpportunities:', result);
+  return result;
 });
 
 const formatCategoryName = (category) => {

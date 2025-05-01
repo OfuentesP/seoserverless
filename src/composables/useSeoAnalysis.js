@@ -452,10 +452,21 @@ export function useSeoAnalysis() {
                 score: audit.score !== undefined ? audit.score : null,
                 numericValue: audit.numericValue,
                 displayValue: audit.displayValue,
-                details: audit.details
+                details: audit.details || {}
               };
             }
           });
+        }
+
+        // Validar que tenemos los datos mínimos necesarios
+        const requiredAudits = ['largest-contentful-paint', 'cumulative-layout-shift', 'total-blocking-time'];
+        const hasRequiredAudits = requiredAudits.every(auditId => 
+          normalizedLighthouse.audits[auditId] && 
+          typeof normalizedLighthouse.audits[auditId] === 'object'
+        );
+
+        if (!hasRequiredAudits) {
+          console.warn('[useSeoAnalysis] Faltan audits requeridos:', normalizedLighthouse.audits);
         }
 
         console.log('[useSeoAnalysis] Lighthouse normalized:', JSON.stringify(normalizedLighthouse, null, 2));
