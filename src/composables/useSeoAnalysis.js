@@ -258,30 +258,82 @@ export function useSeoAnalysis() {
           throw new Error('Timeout esperando resultados de WebPageTest');
         }
         
-        console.log(`[useSeoAnalysis] ✅ WebPageTest resultados:`, webpagetestResults);
+        console.log('🔍 [WebPageTest] Resultados completos:', JSON.stringify(webpagetestResults, null, 2));
+        console.log('🔍 [WebPageTest] Estructura de datos:', {
+          data: webpagetestResults.data ? 'present' : 'missing',
+          median: webpagetestResults.data?.median ? 'present' : 'missing',
+          firstView: webpagetestResults.data?.median?.firstView ? 'present' : 'missing'
+        });
 
         progress.value = 40;
         currentStep.value = 'Obteniendo resultados de Lighthouse...';
 
-        // Step 2: Lighthouse Results
-        const lighthouseResponse = await axios.get(`/api/lighthouse/results/${testId}`);
-        lighthouse.value = lighthouseResponse.data;
-        console.log(`[useSeoAnalysis] ✅ Lighthouse resultados:`, lighthouse.value);
+        // Step 2: Lighthouse Results - Esperar hasta que esté listo
+        let lighthouseData = null;
+        let lighthouseRetries = 12; // 1 minuto de intentos (12x5s)
+        
+        while (lighthouseRetries > 0) {
+          const lighthouseResponse = await axios.get(`/api/lighthouse/results/${testId}`);
+          if (lighthouseResponse.data.status === 'completed' && lighthouseResponse.data.lighthouse) {
+            lighthouseData = lighthouseResponse.data.lighthouse;
+            break;
+          }
+          console.log(`[useSeoAnalysis] ⏳ Lighthouse aún no está listo (${lighthouseRetries} intentos restantes)`);
+          lighthouseRetries--;
+          await new Promise(resolve => setTimeout(resolve, 5000)); // 5 segundos
+        }
 
-        const metrics = lighthouse.value?.audits || {};
-        resumen.value = {
+        if (!lighthouseData) {
+          console.log('[useSeoAnalysis] ⚠️ No se pudieron obtener resultados de Lighthouse');
+        } else {
+          console.log('[useSeoAnalysis] ✅ Lighthouse resultados obtenidos');
+        }
+
+        const metrics = lighthouseData?.audits || {};
+        console.log('🔍 [Lighthouse] Métricas detalladas:', {
+          lcp: {
+            raw: metrics['largest-contentful-paint'],
+            value: metrics['largest-contentful-paint']?.numericValue,
+            displayValue: metrics['largest-contentful-paint']?.displayValue,
+            exists: !!metrics['largest-contentful-paint']
+          },
+          cls: {
+            raw: metrics['cumulative-layout-shift'],
+            value: metrics['cumulative-layout-shift']?.numericValue,
+            displayValue: metrics['cumulative-layout-shift']?.displayValue,
+            exists: !!metrics['cumulative-layout-shift']
+          },
+          tbt: {
+            raw: metrics['total-blocking-time'],
+            value: metrics['total-blocking-time']?.numericValue,
+            displayValue: metrics['total-blocking-time']?.displayValue,
+            exists: !!metrics['total-blocking-time']
+          }
+        });
+
+        const resumenTemp = {
           url: webpagetestResults.url || webpagetestResults.testUrl || null,
-          lcp: metrics['largest-contentful-paint']?.numericValue ?? webpagetestResults.lcp ?? null,
-          cls: metrics['cumulative-layout-shift']?.numericValue ?? webpagetestResults.cls ?? null,
-          tbt: metrics['total-blocking-time']?.numericValue ?? webpagetestResults.tbt ?? null,
-          fcp: metrics['first-contentful-paint']?.numericValue ?? webpagetestResults.fcp ?? null,
-          si: metrics['speed-index']?.numericValue ?? webpagetestResults.SpeedIndex ?? webpagetestResults.si ?? null,
+          lcp: webpagetestResults.lcp ?? webpagetestResults.data?.median?.firstView?.largestContentfulPaint ?? metrics['largest-contentful-paint']?.numericValue ?? null,
+          cls: metrics['cumulative-layout-shift']?.numericValue ?? null,
+          tbt: metrics['total-blocking-time']?.numericValue ?? null,
+          fcp: webpagetestResults.fcp ?? null,
+          si: webpagetestResults.SpeedIndex ?? null,
           ttfb: webpagetestResults.TTFB ?? null,
           loadTime: webpagetestResults.loadTime ?? null,
           webpagetestUrl: webpagetestResults.detalles ?? null,
           totalSize: webpagetestResults.totalSize ?? null,
           requests: webpagetestResults.requests ?? null
         };
+
+        console.log('🔍 [WebPageTest] LCP detallado:', {
+          raw: webpagetestResults.lcp,
+          firstView: webpagetestResults.data?.median?.firstView?.largestContentfulPaint,
+          lighthouse: metrics['largest-contentful-paint']?.numericValue,
+          final: resumenTemp.lcp
+        });
+
+        console.log(`[useSeoAnalysis] 🔍 Resumen temporal completo:`, JSON.stringify(resumenTemp, null, 2));
+        resumen.value = resumenTemp;
         console.log(`[useSeoAnalysis] 📈 Core Web Vitals extraídos:`, resumen.value);
 
         estado.value = '✅ WebPageTest y Lighthouse OK';

@@ -174,7 +174,51 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
 
       // Extraer métricas
       const fv = data.data.runs['1'].firstView;
-      log(`[debug] FirstView data: ${JSON.stringify(fv)}`);
+      log(`[debug] FirstView data COMPLETO:`, JSON.stringify(data.data, null, 2));
+      log(`[debug] Estructura de datos completa:`, {
+        hasData: !!data.data,
+        hasRuns: !!data.data?.runs,
+        hasRun1: !!data.data?.runs?.['1'],
+        hasFirstView: !!data.data?.runs?.['1']?.firstView,
+        firstViewKeys: Object.keys(fv || {})
+      });
+
+      // Extracción robusta de LCP
+      let lcp = fv.LCP || fv.largestContentfulPaint || fv.largest_contentful_paint;
+      let lcpSource = 'direct';
+      if (!lcp && Array.isArray(fv.chromeUserTiming)) {
+        const lcpTiming = fv.chromeUserTiming.find(t => t.name === 'LargestContentfulPaint');
+        if (lcpTiming) {
+          lcp = lcpTiming.time;
+          lcpSource = 'chromeUserTiming';
+        }
+      }
+      if (!lcp && fv['chromeUserTiming.LargestContentfulPaint']) {
+        lcp = fv['chromeUserTiming.LargestContentfulPaint'];
+        lcpSource = 'chromeUserTiming.LargestContentfulPaint';
+      }
+      if (!lcp && Array.isArray(fv.largestPaints) && fv.largestPaints.length > 0) {
+        lcp = fv.largestPaints[0].time;
+        lcpSource = 'largestPaints[0]';
+      }
+      log(`[debug] LCP extraído: ${lcp} (fuente: ${lcpSource})`);
+
+      // Log detallado de campos LCP
+      log(`[debug] Campos LCP disponibles:`, {
+        directLCP: fv.LCP,
+        largestContentfulPaint: fv.largestContentfulPaint,
+        largest_contentful_paint: fv.largest_contentful_paint,
+        chromeUserTiming: fv.chromeUserTiming?.find(t => t.name === 'LargestContentfulPaint'),
+        chromeUserTimingDot: fv['chromeUserTiming.LargestContentfulPaint'],
+        largestPaints: Array.isArray(fv.largestPaints) ? fv.largestPaints[0] : undefined
+      });
+
+      // Log extra para ver si existen los campos avanzados
+      log(`[debug] Métricas avanzadas:`, {
+        lcp,
+        cls: fv.CLS || fv.cumulativeLayoutShift || fv.cumulative_layout_shift || fv.vitals?.cls,
+        tbt: fv.TBT || fv.totalBlockingTime || fv.total_blocking_time
+      });
 
       const resumen = {
         url: data.data.url,
@@ -184,9 +228,9 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
         totalSize: fv.bytesIn,
         requests: Array.isArray(fv.requests) ? fv.requests.length : fv.requests,
         fcp: fv.firstContentfulPaint || fv.first_contentful_paint,
-        lcp: fv.largestContentfulPaint || fv.largest_contentful_paint,
-        cls: fv.cumulativeLayoutShift || fv.cumulative_layout_shift,
-        tbt: fv.totalBlockingTime || fv.total_blocking_time,
+        lcp,
+        cls: fv.CLS || fv.cumulativeLayoutShift || fv.cumulative_layout_shift || fv.vitals?.cls,
+        tbt: fv.TBT || fv.totalBlockingTime || fv.total_blocking_time,
         detalles: data.data.summary,
         testId
       };
