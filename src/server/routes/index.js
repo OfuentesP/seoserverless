@@ -293,25 +293,94 @@ router.get('/analyze-meta', async (req, res) => {
       return res.status(400).json({ error: 'URL es requerida' });
     }
 
+    // Realizar la petición con axios para obtener headers
     const response = await axios.get(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; SeoAnalyzer/1.0; +http://localhost)',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3'
       },
-      timeout: 10000 // 10 segundos de timeout
+      timeout: 10000,
+      validateStatus: false // Para obtener todos los códigos de respuesta
     });
 
     const $ = cheerio.load(response.data);
 
-    // Análisis más detallado de metadatos
+    // Análisis de scripts
+    const scripts = $('script').toArray();
+    const asyncScripts = scripts.filter(script => $(script).attr('async')).length;
+    const deferScripts = scripts.filter(script => $(script).attr('defer')).length;
+    const blockingScripts = scripts.filter(script => 
+      !$(script).attr('async') && !$(script).attr('defer')
+    ).length;
+
+    // Análisis de imágenes
+    const images = $('img').toArray();
+    const imagesWithoutAlt = images.filter(img => !$(img).attr('alt')).length;
+    const modernImageFormats = images.filter(img => {
+      const src = $(img).attr('src') || '';
+      return src.match(/\.(webp|avif)$/i);
+    }).length;
+
+    // Análisis de fuentes y preconnect
+    const fontUrls = [];
+    const preconnectUrls = [];
+    const dnsPrefetchUrls = [];
+    $('link').each((i, elem) => {
+      const href = $(elem).attr('href');
+      const rel = $(elem).attr('rel');
+      if (href && href.includes('fonts.googleapis.com')) {
+        fontUrls.push(href);
+      }
+      if (rel === 'preconnect') {
+        preconnectUrls.push(href);
+      }
+      if (rel === 'dns-prefetch') {
+        dnsPrefetchUrls.push(href);
+      }
+    });
+
+    // Análisis de headers
+    const headers = {
+      content_type: response.headers['content-type'],
+      content_encoding: response.headers['content-encoding'],
+      cache_control: response.headers['cache-control'],
+      hsts: Boolean(response.headers['strict-transport-security']),
+      protocol: response.request?.res?.httpVersion || 'unknown'
+    };
+
+    // Análisis de rendimiento y recursos
+    const performance = {
+      load_time: response.headers['x-response-time'] ? parseFloat(response.headers['x-response-time']) : null,
+      ttfb: response.headers['x-ttfb'] ? parseFloat(response.headers['x-ttfb']) : null,
+      page_weight_kb: Math.round(response.data.length / 1024),
+      requests: scripts.length + images.length + fontUrls.length
+    };
+
+    // Análisis de Core Web Vitals (simulado, estos valores deberían venir de Lighthouse o CrUX)
+    const coreWebVitals = {
+      fcp: null,
+      lcp: null,
+      cls: null,
+      tbt: null,
+      tti: null,
+      fid: null
+    };
+
     const metaData = {
-      title: $('title').text().trim(),
-      description: $('meta[name="description"]').attr('content') || '',
+      title: {
+        content: $('title').text().trim(),
+        length: $('title').text().trim().length,
+        status: getTitleStatus($('title').text().trim().length)
+      },
+      description: {
+        content: $('meta[name="description"]').attr('content') || '',
+        length: ($('meta[name="description"]').attr('content') || '').length,
+        status: getDescriptionStatus(($('meta[name="description"]').attr('content') || '').length)
+      },
       keywords: $('meta[name="keywords"]').attr('content') || '',
       robots: $('meta[name="robots"]').attr('content') || '',
       canonical: $('link[rel="canonical"]').attr('href') || '',
-      // Metadatos adicionales
       ogTitle: $('meta[property="og:title"]').attr('content') || '',
       ogDescription: $('meta[property="og:description"]').attr('content') || '',
       ogImage: $('meta[property="og:image"]').attr('content') || '',
@@ -322,22 +391,37 @@ router.get('/analyze-meta', async (req, res) => {
       language: $('html').attr('lang') || ''
     };
 
-    // Análisis de longitudes
-    const analysis = {
-      titleLength: metaData.title.length,
-      descriptionLength: metaData.description.length,
-      titleStatus: metaData.title.length >= 30 && metaData.title.length <= 60 ? 'optimal' : 'needs-review',
-      descriptionStatus: metaData.description.length >= 120 && metaData.description.length <= 160 ? 'optimal' : 'needs-review',
-      hasSocialMeta: Boolean(metaData.ogTitle || metaData.twitterCard),
-      hasCanonical: Boolean(metaData.canonical),
-      hasLanguage: Boolean(metaData.language),
-      hasViewport: Boolean(metaData.viewport)
+    const technicalAnalysis = {
+      headers,
+      performance,
+      coreWebVitals,
+      resources: {
+        blocking_scripts: blockingScripts,
+        async_scripts: asyncScripts,
+        defer_scripts: deferScripts,
+        images_without_alt: imagesWithoutAlt,
+        modern_image_formats: modernImageFormats,
+        total_images: images.length
+      },
+      optimization: {
+        preconnect: preconnectUrls.length > 0,
+        dns_prefetch: dnsPrefetchUrls.length > 0,
+        font_loading: {
+          google_fonts: fontUrls.length,
+          preconnect_fonts: preconnectUrls.some(url => url.includes('fonts.gstatic.com')),
+          font_display: $('style').text().includes('font-display')
+        }
+      },
+      security: {
+        https: url.startsWith('https://'),
+        hsts: Boolean(response.headers['strict-transport-security'])
+      }
     };
 
     res.json({
       url,
       metaData,
-      analysis,
+      technicalAnalysis,
       timestamp: new Date().toISOString()
     });
 
@@ -356,6 +440,19 @@ router.get('/analyze-meta', async (req, res) => {
     });
   }
 });
+
+// Funciones auxiliares
+function getTitleStatus(length) {
+  if (length < 30) return 'below recommended length';
+  if (length > 60) return 'exceeds recommended length';
+  return 'optimal';
+}
+
+function getDescriptionStatus(length) {
+  if (length < 120) return 'below recommended length';
+  if (length > 160) return 'exceeds recommended length';
+  return 'optimal';
+}
 
 // Limpieza periódica de resultados antiguos (cada hora)
 setInterval(() => {

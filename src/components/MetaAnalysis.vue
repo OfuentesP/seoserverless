@@ -20,17 +20,17 @@
         <h3 class="text-lg font-medium text-white mb-2">Meta Title</h3>
         <div class="flex items-center space-x-2">
           <span class="text-gray-400">Longitud:</span>
-          <span :class="getLengthClass(metaData.analysis.titleLength, 30, 60)">
-            {{ metaData.analysis.titleLength }} caracteres
+          <span :class="getLengthClass(metaData.metaData.title?.length || 0, 30, 60)">
+            {{ metaData.metaData.title?.length || 0 }} caracteres
           </span>
         </div>
         <div class="mt-2 p-3 bg-gray-900/50 rounded">
           <p class="text-gray-300">{{ metaData.metaData.title || 'No definido' }}</p>
         </div>
         <div class="mt-2">
-          <p :class="metaData.analysis.titleStatus === 'optimal' ? 'text-green-400' : 'text-yellow-400'" class="text-sm">
-            {{ metaData.analysis.titleStatus === 'optimal' 
-              ? '✅ La longitud del título es óptima' 
+          <p :class="(metaData.metaData.title?.length >= 30 && metaData.metaData.title?.length <= 60) ? 'text-green-400' : 'text-yellow-400'" class="text-sm">
+            {{ (metaData.metaData.title?.length >= 30 && metaData.metaData.title?.length <= 60)
+              ? '✅ La longitud del título es óptima'
               : '⚠️ Se recomienda un título entre 30-60 caracteres' }}
           </p>
         </div>
@@ -41,16 +41,16 @@
         <h3 class="text-lg font-medium text-white mb-2">Meta Description</h3>
         <div class="flex items-center space-x-2">
           <span class="text-gray-400">Longitud:</span>
-          <span :class="getLengthClass(metaData.analysis.descriptionLength, 120, 160)">
-            {{ metaData.analysis.descriptionLength }} caracteres
+          <span :class="getLengthClass(metaData.metaData.description?.length || 0, 120, 160)">
+            {{ metaData.metaData.description?.length || 0 }} caracteres
           </span>
         </div>
         <div class="mt-2 p-3 bg-gray-900/50 rounded">
           <p class="text-gray-300">{{ metaData.metaData.description || 'No definido' }}</p>
         </div>
         <div class="mt-2">
-          <p :class="metaData.analysis.descriptionStatus === 'optimal' ? 'text-green-400' : 'text-yellow-400'" class="text-sm">
-            {{ metaData.analysis.descriptionStatus === 'optimal'
+          <p :class="(metaData.metaData.description?.length >= 120 && metaData.metaData.description?.length <= 160) ? 'text-green-400' : 'text-yellow-400'" class="text-sm">
+            {{ (metaData.metaData.description?.length >= 120 && metaData.metaData.description?.length <= 160)
               ? '✅ La longitud de la descripción es óptima'
               : '⚠️ Se recomienda una descripción entre 120-160 caracteres' }}
           </p>
@@ -79,8 +79,8 @@
           </div>
         </div>
         <div class="mt-2">
-          <p :class="metaData.analysis.hasSocialMeta ? 'text-green-400' : 'text-yellow-400'" class="text-sm">
-            {{ metaData.analysis.hasSocialMeta
+          <p :class="Boolean(metaData.metaData.ogTitle || metaData.metaData.twitterCard) ? 'text-green-400' : 'text-yellow-400'" class="text-sm">
+            {{ Boolean(metaData.metaData.ogTitle || metaData.metaData.twitterCard)
               ? '✅ Metadatos sociales configurados correctamente'
               : '⚠️ Se recomienda agregar metadatos para redes sociales' }}
           </p>
@@ -180,6 +180,147 @@
               {{ metaData.metaData.viewport ? '✅' : '⚠️' }}
             </span>
             <span class="text-gray-300">viewport: {{ metaData.metaData.viewport ? 'presente' : 'no definido' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Análisis Técnico -->
+      <div v-if="metaData.technicalAnalysis" class="bg-gray-800/50 p-4 rounded-lg mt-6">
+        <h3 class="text-2xl font-semibold mb-6 text-white flex items-center">
+          <span class="mr-3 text-blue-400">🔧</span>
+          Análisis Técnico
+        </h3>
+
+        <!-- Mobile Friendly -->
+        <div class="mb-6">
+          <h4 class="text-lg font-medium text-white mb-3">📱 Compatibilidad Mobile</h4>
+          <div class="bg-gray-900/50 p-4 rounded-lg">
+            <div class="flex items-center justify-between">
+              <span class="text-gray-300">Estado Mobile-Friendly:</span>
+              <span :class="metaData.technicalAnalysis.mobile?.isOptimized ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.technicalAnalysis.mobile?.isOptimized ? '✅ Optimizado' : '⚠️ Necesita mejoras' }}
+              </span>
+            </div>
+            <div v-if="metaData.technicalAnalysis.mobile?.recommendation" class="mt-2 text-yellow-400 text-sm">
+              ⚠️ {{ metaData.technicalAnalysis.mobile.recommendation }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Scripts -->
+        <div class="mb-6">
+          <h4 class="text-lg font-medium text-white mb-3">📜 Scripts y Recursos</h4>
+          <div class="bg-gray-900/50 p-4 rounded-lg">
+            <div class="flex items-center justify-between">
+              <span class="text-gray-300">Total Scripts:</span>
+              <span class="text-blue-400">{{ metaData.technicalAnalysis.scripts?.total || 0 }}</span>
+            </div>
+            <div class="flex items-center justify-between mt-2">
+              <span class="text-gray-300">Scripts Bloqueantes:</span>
+              <span :class="(metaData.technicalAnalysis.scripts?.blocking || 0) === 0 ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.technicalAnalysis.scripts?.blocking || 0 }}
+              </span>
+            </div>
+            <div v-if="metaData.technicalAnalysis.scripts?.recommendation" class="mt-2 text-yellow-400 text-sm">
+              ⚠️ {{ metaData.technicalAnalysis.scripts.recommendation }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Fonts -->
+        <div class="mb-6">
+          <h4 class="text-lg font-medium text-white mb-3">🔤 Fuentes Web</h4>
+          <div class="bg-gray-900/50 p-4 rounded-lg">
+            <div class="flex items-center justify-between">
+              <span class="text-gray-300">Google Fonts:</span>
+              <span class="text-blue-400">{{ metaData.technicalAnalysis.fonts?.googleFonts || 0 }}</span>
+            </div>
+            <div class="flex items-center justify-between mt-2">
+              <span class="text-gray-300">Preconnect:</span>
+              <span :class="metaData.technicalAnalysis.fonts?.hasPreconnect ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.technicalAnalysis.fonts?.hasPreconnect ? '✅' : '⚠️' }}
+              </span>
+            </div>
+            <div v-if="metaData.technicalAnalysis.fonts?.recommendation" class="mt-2 text-yellow-400 text-sm">
+              ⚠️ {{ metaData.technicalAnalysis.fonts.recommendation }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Images -->
+        <div class="mb-6">
+          <h4 class="text-lg font-medium text-white mb-3">🖼️ Imágenes</h4>
+          <div class="bg-gray-900/50 p-4 rounded-lg">
+            <div class="flex items-center justify-between">
+              <span class="text-gray-300">Total Imágenes:</span>
+              <span class="text-blue-400">{{ metaData.technicalAnalysis.images?.total || 0 }}</span>
+            </div>
+            <div class="flex items-center justify-between mt-2">
+              <span class="text-gray-300">Sin atributo alt:</span>
+              <span :class="(metaData.technicalAnalysis.images?.withoutAlt || 0) === 0 ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.technicalAnalysis.images?.withoutAlt || 0 }}
+              </span>
+            </div>
+            <div v-if="metaData.technicalAnalysis.images?.recommendation" class="mt-2 text-yellow-400 text-sm">
+              ⚠️ {{ metaData.technicalAnalysis.images.recommendation }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Checklist Técnica SEO -->
+        <div class="bg-gray-900/50 p-4 rounded-lg mt-6">
+          <h4 class="text-lg font-medium text-white mb-4">✅ Checklist Técnica SEO</h4>
+          <div class="space-y-2">
+            <div class="flex items-center space-x-2">
+              <span :class="metaData.metaData.title && metaData.metaData.description ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.metaData.title && metaData.metaData.description ? '✔️' : '⚠️' }}
+              </span>
+              <span class="text-gray-300">Título y descripción presentes</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span :class="metaData.metaData.canonical ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.metaData.canonical ? '✔️' : '⚠️' }}
+              </span>
+              <span class="text-gray-300">Canonical definido</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span :class="metaData.metaData.ogTitle && metaData.metaData.twitterCard ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.metaData.ogTitle && metaData.metaData.twitterCard ? '✔️' : '⚠️' }}
+              </span>
+              <span class="text-gray-300">OG y Twitter configurados</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span :class="metaData.technicalAnalysis.mobile?.hasViewport ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.technicalAnalysis.mobile?.hasViewport ? '✔️' : '⚠️' }}
+              </span>
+              <span class="text-gray-300">Viewport presente</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span :class="metaData.technicalAnalysis.security?.https ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.technicalAnalysis.security?.https ? '✔️' : '⚠️' }}
+              </span>
+              <span class="text-gray-300">HTTPS activo</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span :class="metaData.technicalAnalysis.favicon?.present ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.technicalAnalysis.favicon?.present ? '✔️' : '❓' }}
+              </span>
+              <span class="text-gray-300">Favicon {{ metaData.technicalAnalysis.favicon?.present ? 'detectado' : 'no detectado' }}</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span :class="metaData.metaData.language ? 'text-green-400' : 'text-yellow-400'">
+                {{ metaData.metaData.language ? '✔️' : '❓' }}
+              </span>
+              <span class="text-gray-300">Idioma definido: {{ metaData.metaData.language || 'no definido' }}</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="text-yellow-400">❓</span>
+              <span class="text-gray-300">{{ metaData.technicalAnalysis.images?.withoutAlt || 0 }} imágenes sin atributo alt</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="text-yellow-400">❓</span>
+              <span class="text-gray-300">{{ metaData.technicalAnalysis.scripts?.blocking || 0 }} scripts bloqueantes detectados</span>
+            </div>
           </div>
         </div>
       </div>
