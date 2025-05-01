@@ -132,4 +132,4 @@ function formatBytes(bytes) {
 </template>
 
 <style scoped>
-</style>
+</style> 
