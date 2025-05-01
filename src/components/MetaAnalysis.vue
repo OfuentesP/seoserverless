@@ -1,8 +1,8 @@
 <template>
-  <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
+  <div v-if="url" class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
     <h2 class="text-2xl font-semibold mb-6 text-white pdf-text flex items-center">
       <span class="mr-3 text-purple-400">🔍</span>
-      Análisis de Metadatos
+      Meta Analysis
     </h2>
 
     <div v-if="loading" class="text-center py-8">
@@ -326,6 +326,9 @@
       </div>
     </div>
   </div>
+  <div v-else class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
+    <p class="text-gray-400">No hay URL disponible para el análisis</p>
+  </div>
 </template>
 
 <script setup>
@@ -335,7 +338,8 @@ import axios from 'axios';
 const props = defineProps({
   url: {
     type: String,
-    required: true
+    required: true,
+    default: ''
   }
 });
 
@@ -374,6 +378,9 @@ onMounted(() => {
     loading.value = false;
   }
 });
+
+// Debug logs
+console.log('🔍 [MetaAnalysis] URL recibida:', props.url);
 </script>
 
 <style scoped>

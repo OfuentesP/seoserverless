@@ -2,6 +2,7 @@ import express from 'express';
 import { analyzeSitemap } from '../../services/sitemap.js';
 import * as cheerio from 'cheerio';
 import axios from 'axios';
+import corevitalsRouter from './corevitals.js';
 
 const router = express.Router();
 
@@ -32,8 +33,9 @@ router.post('/webpagetest/run', async (req, res) => {
     params.append('url', url);
     params.append('f', 'json');
     params.append('runs', '1');
-    params.append('location', 'ec2-us-east-1:Chrome.Cable');
+    params.append('location', 'Dulles:Chrome');
     params.append('video', '1');
+    params.append('web_vitals', '1');
     params.append('lighthouse', lighthouse ? '1' : '0');
 
     const response = await fetch('https://www.webpagetest.org/runtest.php', {
@@ -109,14 +111,26 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
       f: 'json'
     });
 
-    const response = await fetch(`https://www.webpagetest.org/jsonResult.php?${params}`, {
+    const url = `https://www.webpagetest.org/jsonResult.php?${params}`;
+    log(`[debug] URL de WebPageTest: ${url}`);
+
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'X-WPT-API-KEY': process.env.WPT_API_KEY
+        'X-WPT-API-KEY': process.env.WPT_API_KEY,
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
       }
     });
 
+    log(`[debug] Respuesta de WebPageTest: ${response.status} ${response.statusText}`);
+    log(`[debug] Headers de respuesta: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`);
+
     const responseText = await response.text();
+    log(`[debug] Contenido de la respuesta: ${responseText.substring(0, 200)}...`);
+
     let data;
     try {
       data = JSON.parse(responseText);
@@ -138,6 +152,7 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
 
     // Si el test aún está en proceso
     if (data.statusCode === 100) {
+      log(`[info] Test en progreso: ${testId}`);
       return res.json({
         success: true,
         testId,
@@ -148,8 +163,19 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
 
     // Si el test está completo
     if (data.statusCode === 200) {
+      // Verificar que tenemos los datos necesarios
+      if (!data.data?.runs?.['1']?.firstView) {
+        log(`❌ Datos incompletos en la respuesta: ${JSON.stringify(data)}`, 'error');
+        return res.status(500).json({
+          error: 'Datos incompletos en la respuesta de WebPageTest',
+          details: data
+        });
+      }
+
       // Extraer métricas
       const fv = data.data.runs['1'].firstView;
+      log(`[debug] FirstView data: ${JSON.stringify(fv)}`);
+
       const resumen = {
         url: data.data.url,
         loadTime: fv.loadTime,
@@ -157,11 +183,15 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
         TTFB: fv.TTFB,
         totalSize: fv.bytesIn,
         requests: Array.isArray(fv.requests) ? fv.requests.length : fv.requests,
-        lcp: fv.largestContentfulPaint,
-        cls: fv.cumulativeLayoutShift,
-        tbt: fv.totalBlockingTime,
-        detalles: data.data.summary
+        fcp: fv.firstContentfulPaint || fv.first_contentful_paint,
+        lcp: fv.largestContentfulPaint || fv.largest_contentful_paint,
+        cls: fv.cumulativeLayoutShift || fv.cumulative_layout_shift,
+        tbt: fv.totalBlockingTime || fv.total_blocking_time,
+        detalles: data.data.summary,
+        testId
       };
+
+      log(`[debug] Resumen extraído: ${JSON.stringify(resumen)}`);
 
       analysisStatus.set(testId, {
         timestamp: Date.now(),
@@ -179,6 +209,7 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
     }
 
     // Si llegamos aquí, hay un error inesperado
+    log(`❌ Estado inesperado: ${data.statusCode}`, 'error');
     throw new Error(`Estado inesperado: ${data.statusCode}`);
 
   } catch (error) {
@@ -464,5 +495,8 @@ setInterval(() => {
     }
   }
 }, 60 * 60 * 1000);
+
+// Usar el router de corevitals
+router.use('/corevitals', corevitalsRouter);
 
 export default router;

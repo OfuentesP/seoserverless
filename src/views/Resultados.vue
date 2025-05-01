@@ -88,7 +88,11 @@
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">First Contentful Paint (FCP)</p>
             <p class="text-xs text-gray-400 mb-2">¿Cuándo se muestra el primer contenido? Impacta la percepción de velocidad.</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouseAudits['first-contentful-paint']?.numericValue) }}</p>
+            <ResultadosFCP
+              v-if="resumen?.fcp !== undefined && resumen?.fcp !== null"
+              :fcp="resumen.fcp"
+              :webpagetestResults="resumen"
+            />
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Speed Index</p>
@@ -148,46 +152,85 @@
 
       <!-- Sección Meta Analysis -->
       <section class="mb-8">
-        <MetaAnalysis :url="resumen.url" />
+        <MetaAnalysis :url="resumen?.url || ''" />
       </section>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { toRaw } from 'vue';
 import ExportButton from '../components/ExportButton.vue';
 import MetaAnalysis from '../components/MetaAnalysis.vue';
+import ResultadosFCP from '../components/ResultadosFCP.vue';
 
-// Obtenemos el estado enviado por router.push desde history.state
+// Obtener estado de la ruta
+const route = useRoute();
 const state = window.history.state || {};
-
-const estado = ref(state.estado || '❌ Sin estado');
 const resumen = ref(state.resumen || {});
-const lighthouse = ref(state.lighthouse || { audits: {} });
-const sitemapResults = ref(state.sitemapResults || {});
-const geminiInsight = ref(state.geminiInsight || {});
 
-// Computed properties para manejar datos de forma segura
-const lighthouseAudits = computed(() => lighthouse.value?.audits || {});
-const sitemapData = computed(() => sitemapResults.value || {});
+// Debug logs para el estado inicial
+console.log('🔍 [Resultados] Estado de la ruta:', window.history.state);
+console.log('🔍 [Resultados] Resumen completo:', resumen.value);
+console.log('🔍 [Resultados] FCP en resumen:', resumen.value?.fcp);
+console.log('🔍 [Resultados] WebPageTest results:', resumen.value?.webpagetestResults);
 
-const resumenPlano = computed(() => {
-  const r = toRaw(resumen.value || resumen);
-
-  // 🔧 Reparar si requests viene como string
-  if (r && typeof r.requests === 'string') {
-    try {
-      r.requests = JSON.parse(r.requests);
-    } catch (e) {
-      console.warn('❌ Error parseando requests:', e);
-      r.requests = [];
-    }
-  }
-
-  return r;
+// Asegurarnos de que el FCP se pasa correctamente
+const webpagetestResults = computed(() => {
+  const results = {
+    ...resumen.value,
+    fcp: resumen.value?.fcp || resumen.value?.webpagetestResults?.fcp,
+    loadTime: resumen.value?.loadTime,
+    ttfb: resumen.value?.ttfb,
+    totalSize: resumen.value?.totalSize,
+    requests: resumen.value?.requests
+  };
+  console.log('🔍 [Resultados] WebPageTest results procesados:', results);
+  return results;
 });
+
+// Inicializar el estado con valores por defecto
+const estado = ref(state.estado || '⏳ Esperando resultados...');
+const resumenPlano = ref({
+  ...resumen.value,
+  fcp: resumen.value?.fcp || null,
+  loadTime: resumen.value?.loadTime || null,
+  ttfb: resumen.value?.ttfb || null,
+  totalSize: resumen.value?.totalSize || null,
+  requests: resumen.value?.requests || null
+});
+
+// Debug logs
+console.log('[DEBUG] Estado inicial:', estado.value);
+console.log('[DEBUG] Resumen inicial:', resumenPlano.value);
+console.log('[DEBUG] State completo:', state);
+
+// Observar cambios en el estado de la ruta
+watch(() => window.history.state, (newState) => {
+  console.log('🔍 [Resultados] Estado de la ruta actualizado:', newState);
+  if (newState?.resumen) {
+    resumen.value = newState.resumen;
+    estado.value = newState.estado || '⏳ Esperando resultados...';
+    resumenPlano.value = {
+      ...newState.resumen,
+      fcp: newState.resumen.fcp || null,
+      loadTime: newState.resumen.loadTime || null,
+      ttfb: newState.resumen.ttfb || null,
+      totalSize: newState.resumen.totalSize || null,
+      requests: newState.resumen.requests || null
+    };
+    console.log('🔍 [Resultados] Estado actualizado:', {
+      resumen: resumen.value,
+      estado: estado.value,
+      resumenPlano: resumenPlano.value
+    });
+  }
+}, { deep: true, immediate: true });
+
+const lighthouseAudits = computed(() => state.lighthouse?.audits || {});
+const sitemapData = computed(() => state.sitemapResults || {});
 
 const getMetricColor = (value, type) => {
   if (!value) return 'text-gray-400';
@@ -205,8 +248,29 @@ const getMetricColor = (value, type) => {
 };
 
 const formatSeconds = (value) => {
-  if (value === undefined || value === null || isNaN(value)) return 'N/A';
-  return (value / 1000).toFixed(3).replace(/^0+/, '') + 'S';
+  console.log('[DEBUG] formatSeconds input:', value);
+  console.log('[DEBUG] formatSeconds type:', typeof value);
+  console.log('[DEBUG] Estado actual:', estado.value);
+  
+  // Si estamos en estado de error o el test está iniciando
+  if (estado.value.includes('❌') || estado.value.includes('Iniciando')) {
+    return '⏳ Analizando...';
+  }
+  
+  // Si el valor es undefined/null
+  if (value === undefined || value === null) {
+    return estado.value.includes('Esperando') ? '⏳ Cargando...' : 'N/A';
+  }
+  
+  // Si el valor no es un número
+  if (isNaN(value)) {
+    console.log('[DEBUG] formatSeconds: valor NaN');
+    return 'N/A';
+  }
+  
+  const result = (value / 1000).toFixed(3) + 's';
+  console.log('[DEBUG] formatSeconds result:', result);
+  return result;
 };
 
 const formatCLS = (value) => {

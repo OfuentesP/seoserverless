@@ -118,6 +118,7 @@ export function useSeoAnalysis() {
       }
       
       recordRequest();
+      console.log(`[useSeoAnalysis] 🔍 Consultando resultados para testId: ${testId}`);
       const response = await axios.get(`/api/webpagetest/results/${testId}`);
       
       // Verificar si estamos bloqueados
@@ -143,12 +144,24 @@ export function useSeoAnalysis() {
       return { status: 'error', message: 'Error desconocido' };
     } catch (error) {
       console.error('[useSeoAnalysis] ❌ Error checking WebPageTest results:', error);
+      console.error('[useSeoAnalysis] ❌ Detalles del error:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
       
       // Verificar si el error es por bloqueo
       if (error.response && (error.response.status === 429 || error.response.status === 403)) {
         isBlocked.value = true;
         blockMessage.value = 'WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.';
         return { status: 'error', message: 'Bloqueado por WebPageTest' };
+      }
+      
+      // Si es un error 500, intentar reintentar después de un tiempo
+      if (error.response?.status === 500) {
+        console.log('[useSeoAnalysis] ⚠️ Error 500, reintentando en 5 segundos...');
+        await wait(5000);
+        return { status: 'pending' };
       }
       
       return { status: 'error', message: error.message };
@@ -261,7 +274,7 @@ export function useSeoAnalysis() {
           lcp: metrics['largest-contentful-paint']?.numericValue ?? null,
           cls: metrics['cumulative-layout-shift']?.numericValue ?? null,
           tbt: metrics['total-blocking-time']?.numericValue ?? null,
-          fcp: metrics['first-contentful-paint']?.numericValue ?? null,
+          fcp: metrics['first-contentful-paint']?.numericValue ?? webpagetestResults.fcp ?? null,
           si: metrics['speed-index']?.numericValue ?? null,
           ttfb: webpagetestResults.TTFB ?? null,
           loadTime: webpagetestResults.loadTime ?? null,
@@ -310,6 +323,15 @@ export function useSeoAnalysis() {
             sitemapResults: sitemapResultsPlano,
             estado: estado.value
           }
+        });
+
+        // Debug logs
+        console.log('[DEBUG] Resumen WebPageTest recibido:', resumen);
+        console.log('[DEBUG] Estado que se va a guardar en la ruta:', {
+          resumen,
+          lighthouse,
+          sitemapResults,
+          estado: estado.value
         });
 
       } catch (error) {
