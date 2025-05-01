@@ -314,7 +314,7 @@ export function useSeoAnalysis() {
         const resumenTemp = {
           url: webpagetestResults.url || webpagetestResults.testUrl || null,
           lcp: webpagetestResults.lcp ?? webpagetestResults.data?.median?.firstView?.largestContentfulPaint ?? metrics['largest-contentful-paint']?.numericValue ?? null,
-          cls: metrics['cumulative-layout-shift']?.numericValue ?? null,
+          cls: webpagetestResults.cls ?? webpagetestResults.data?.median?.firstView?.['chromeUserTiming.CumulativeLayoutShift'] ?? metrics['cumulative-layout-shift']?.numericValue ?? null,
           tbt: metrics['total-blocking-time']?.numericValue ?? null,
           fcp: webpagetestResults.fcp ?? null,
           si: webpagetestResults.SpeedIndex ?? null,
@@ -325,11 +325,11 @@ export function useSeoAnalysis() {
           requests: webpagetestResults.requests ?? null
         };
 
-        console.log('🔍 [WebPageTest] LCP detallado:', {
-          raw: webpagetestResults.lcp,
-          firstView: webpagetestResults.data?.median?.firstView?.largestContentfulPaint,
-          lighthouse: metrics['largest-contentful-paint']?.numericValue,
-          final: resumenTemp.lcp
+        console.log('🔍 [WebPageTest] CLS detallado:', {
+          raw: webpagetestResults.cls,
+          firstView: webpagetestResults.data?.median?.firstView?.['chromeUserTiming.CumulativeLayoutShift'],
+          lighthouse: metrics['cumulative-layout-shift']?.numericValue,
+          final: resumenTemp.cls
         });
 
         console.log(`[useSeoAnalysis] 🔍 Resumen temporal completo:`, JSON.stringify(resumenTemp, null, 2));

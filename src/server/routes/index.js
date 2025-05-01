@@ -207,80 +207,135 @@ router.get('/webpagetest/results/:testId', async (req, res) => {
       let cls = null;
       let clsSource = null;
 
-      // 1. Primero intentar obtener de campos directos
-      if (typeof fv.CLS !== 'undefined') {
-        cls = fv.CLS;
-        clsSource = 'direct.CLS';
-      } else if (typeof fv.cumulativeLayoutShift !== 'undefined') {
-        cls = fv.cumulativeLayoutShift;
-        clsSource = 'direct.cumulativeLayoutShift';
-      }
-
-      // 2. Buscar en chromeUserTiming array
-      if (cls === null && Array.isArray(fv.chromeUserTiming)) {
-        const clsTiming = fv.chromeUserTiming.find(t => t.name === 'CumulativeLayoutShift');
-        if (clsTiming && typeof clsTiming.value !== 'undefined') {
-          cls = clsTiming.value;
-          clsSource = 'chromeUserTiming.array.CumulativeLayoutShift';
-        } else {
-          const tlsTiming = fv.chromeUserTiming.find(t => t.name === 'TotalLayoutShift');
-          if (tlsTiming && typeof tlsTiming.value !== 'undefined') {
-            cls = tlsTiming.value;
-            clsSource = 'chromeUserTiming.array.TotalLayoutShift';
-          }
+      log(`[debug] === INICIO EXTRACCIÓN CLS ===`);
+      
+      // Verificar repeatView primero ya que sabemos que tiene el valor
+      if (data.data.runs?.['1']?.repeatView) {
+        const rv = data.data.runs['1'].repeatView;
+        log(`[debug] RepeatView encontrado, buscando CLS...`);
+        log(`[debug] chromeUserTiming.CumulativeLayoutShift: ${rv['chromeUserTiming.CumulativeLayoutShift']}`);
+        
+        if (typeof rv['chromeUserTiming.CumulativeLayoutShift'] !== 'undefined') {
+          cls = rv['chromeUserTiming.CumulativeLayoutShift'];
+          clsSource = 'repeatView.chromeUserTiming.CumulativeLayoutShift';
+          log(`[debug] CLS encontrado en repeatView: ${cls}`);
         }
       }
 
-      // 3. Intentar con notación de punto
+      // Si no encontramos en repeatView, buscar en firstView
       if (cls === null) {
+        log(`[debug] No se encontró CLS en repeatView, buscando en firstView...`);
         if (typeof fv['chromeUserTiming.CumulativeLayoutShift'] !== 'undefined') {
           cls = fv['chromeUserTiming.CumulativeLayoutShift'];
-          clsSource = 'chromeUserTiming.dot.CumulativeLayoutShift';
-        } else if (typeof fv['chromeUserTiming.TotalLayoutShift'] !== 'undefined') {
-          cls = fv['chromeUserTiming.TotalLayoutShift'];
-          clsSource = 'chromeUserTiming.dot.TotalLayoutShift';
+          clsSource = 'firstView.chromeUserTiming.CumulativeLayoutShift';
+          log(`[debug] CLS encontrado en firstView: ${cls}`);
         }
       }
 
       // Asegurar que cls sea un número y tenga 4 decimales
       if (cls !== null) {
         cls = Number(cls).toFixed(4);
+        log(`[debug] CLS final formateado: ${cls} (fuente: ${clsSource})`);
+      } else {
+        log(`[debug] No se encontró valor de CLS en ninguna fuente`);
       }
 
-      log(`[debug] CLS extraído: ${cls} (fuente: ${clsSource})`);
+      // Extracción robusta de TTFB
+      let ttfb = null;
+      if (data.data.runs?.['1']?.firstView?.TTFB !== undefined) {
+        ttfb = data.data.runs['1'].firstView.TTFB;
+        log(`[debug] TTFB encontrado en firstView.TTFB: ${ttfb}`);
+      } else if (data.data.median?.firstView?.TTFB !== undefined) {
+        ttfb = data.data.median.firstView.TTFB;
+        log(`[debug] TTFB encontrado en median.firstView.TTFB: ${ttfb}`);
+      }
 
-      // Log detallado de campos CLS
-      log(`[debug] Campos CLS disponibles:`, {
-        directCLS: fv.CLS,
-        cumulativeLayoutShift: fv.cumulativeLayoutShift,
-        chromeUserTimingArray: fv.chromeUserTiming?.find(t => t.name === 'CumulativeLayoutShift')?.value,
-        chromeUserTimingDotCLS: fv['chromeUserTiming.CumulativeLayoutShift'],
-        chromeUserTimingDotTLS: fv['chromeUserTiming.TotalLayoutShift']
-      });
+      // Asegurar que ttfb sea un número
+      if (ttfb !== null) {
+        ttfb = Number(ttfb).toFixed(0);
+        log(`[debug] TTFB formateado final: ${ttfb}`);
+      }
 
-      // Log extra para ver si existen los campos avanzados
-      log(`[debug] Métricas avanzadas:`, {
-        lcp,
-        cls,
-        tbt: fv.TBT || fv.totalBlockingTime || fv.total_blocking_time
-      });
+      // Extracción robusta de Speed Index y TBT
+      let speedIndex = null;
+      let tbt = null;
 
+      log(`[debug] === INICIO EXTRACCIÓN MÉTRICAS ===`);
+      
+      // Verificar firstView primero
+      if (data.data.runs?.['1']?.firstView) {
+        const fv = data.data.runs['1'].firstView;
+        log(`[debug] FirstView encontrado, buscando métricas...`);
+        
+        // Speed Index
+        if (typeof fv.SpeedIndex !== 'undefined') {
+          speedIndex = fv.SpeedIndex;
+          log(`[debug] SpeedIndex encontrado en firstView: ${speedIndex}`);
+        }
+        
+        // TBT
+        if (typeof fv.TotalBlockingTime !== 'undefined') {
+          tbt = fv.TotalBlockingTime;
+          log(`[debug] TBT encontrado en firstView: ${tbt}`);
+        }
+      }
+
+      // Si no se encontró en firstView, verificar repeatView
+      if (data.data.runs?.['1']?.repeatView) {
+        const rv = data.data.runs['1'].repeatView;
+        log(`[debug] RepeatView encontrado, buscando métricas...`);
+        
+        // Speed Index
+        if (speedIndex === null && typeof rv.SpeedIndex !== 'undefined') {
+          speedIndex = rv.SpeedIndex;
+          log(`[debug] SpeedIndex encontrado en repeatView: ${speedIndex}`);
+        }
+        
+        // TBT
+        if (tbt === null && typeof rv.TotalBlockingTime !== 'undefined') {
+          tbt = rv.TotalBlockingTime;
+          log(`[debug] TBT encontrado en repeatView: ${tbt}`);
+        }
+      }
+
+      // Si aún no se encontró TBT, intentar con lighthouse
+      if (tbt === null && metrics['total-blocking-time']?.numericValue) {
+        tbt = metrics['total-blocking-time'].numericValue;
+        log(`[debug] TBT encontrado en lighthouse: ${tbt}`);
+      }
+
+      // Verificar si tenemos un valor válido de Speed Index
+      if (speedIndex !== null) {
+        speedIndex = Number(speedIndex).toFixed(0);
+        log(`[debug] SpeedIndex final formateado: ${speedIndex}`);
+      }
+      
+      if (tbt !== null) {
+        tbt = Number(tbt).toFixed(0);
+        log(`[debug] TBT final formateado: ${tbt}`);
+      }
+
+      log(`[debug] === FIN EXTRACCIÓN MÉTRICAS ===`);
+
+      // Crear el resumen con los valores extraídos
       const resumen = {
-        url: data.data.url,
-        loadTime: fv.loadTime,
-        SpeedIndex: fv.SpeedIndex,
-        TTFB: fv.TTFB,
-        totalSize: fv.bytesIn,
-        requests: Array.isArray(fv.requests) ? fv.requests.length : fv.requests,
-        fcp: fv.firstContentfulPaint || fv.first_contentful_paint,
-        lcp,
-        cls,
-        tbt: fv.TBT || fv.totalBlockingTime || fv.total_blocking_time,
-        detalles: data.data.summary,
-        testId
+        url: data.data.url || data.data.testUrl || null,
+        lcp: lcp ?? null,
+        cls: cls ?? null,
+        tbt: tbt ?? null,
+        fcp: data.data.median.firstView.firstContentfulPaint ?? null,
+        si: speedIndex ?? null,
+        ttfb: data.data.median.firstView.TTFB ?? null,
+        loadTime: data.data.median.firstView.loadTime ?? null,
+        webpagetestUrl: data.data.summary ?? null,
+        totalSize: data.data.median.firstView.bytesIn ?? null,
+        requests: data.data.median.firstView.requestsFull ?? null
       };
 
-      log(`[debug] Resumen extraído: ${JSON.stringify(resumen)}`);
+      log(`[debug] Resumen final con métricas (TTFB):`, { 
+        ttfb: resumen.ttfb,
+        ttfbType: typeof resumen.ttfb
+      });
 
       analysisStatus.set(testId, {
         timestamp: Date.now(),

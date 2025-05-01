@@ -58,7 +58,7 @@
         </div>
         <div class="mt-6">
           <a
-            :href="resumen.webpagetestUrl || '#'"
+            :href="resumen.detalles || '#'"
             target="_blank"
             class="inline-flex items-center px-4 py-2 bg-blue-900/30 text-blue-300 rounded-lg hover:bg-blue-800/40 transition-colors"
           >
@@ -258,14 +258,48 @@ const formatSeconds = (value) => {
     return 'N/A';
   }
   
-  const result = (value / 1000).toFixed(3) + 's';
-  console.log('[DEBUG] formatSeconds result:', result);
-  return result;
+  // Convertir a número y formatear
+  const numValue = Number(value);
+  if (numValue < 1000) {
+    // Si es menor a 1 segundo, mostrar en milisegundos
+    const result = numValue.toFixed(0) + 'ms';
+    console.log('[DEBUG] formatSeconds result (ms):', result);
+    return result;
+  } else {
+    // Si es mayor o igual a 1 segundo, mostrar en segundos
+    const result = (numValue / 1000).toFixed(3) + 's';
+    console.log('[DEBUG] formatSeconds result (s):', result);
+    return result;
+  }
 };
 
 const formatCLS = (value) => {
-  if (value === undefined || value === null || isNaN(value)) return 'N/A';
-  return Number(value).toFixed(2);
+  console.log('[DEBUG] formatCLS input:', value);
+  console.log('[DEBUG] formatCLS type:', typeof value);
+  
+  if (value === undefined || value === null) {
+    console.log('[DEBUG] formatCLS: valor undefined/null');
+    return 'N/A';
+  }
+  
+  if (isNaN(value)) {
+    console.log('[DEBUG] formatCLS: valor NaN');
+    return 'N/A';
+  }
+  
+  // Asegurarnos de que el valor sea un número
+  const numValue = Number(value);
+  
+  // Si el valor es muy pequeño (menor que 0.0001), mostrar 0.0001
+  if (numValue < 0.0001 && numValue > 0) {
+    console.log('[DEBUG] formatCLS: valor muy pequeño, usando 0.0001');
+    return '0.0001';
+  }
+  
+  // Formatear a 4 decimales
+  const result = numValue.toFixed(4);
+  console.log('[DEBUG] formatCLS result:', result);
+  return result;
 };
 </script>
 
