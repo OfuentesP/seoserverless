@@ -75,12 +75,24 @@ const props = defineProps({
 });
 
 // Agregar un watcher para depuración
-watch(() => props.lighthouse, (newVal) => {
-  console.log('Lighthouse prop changed:', JSON.stringify(newVal, null, 2));
+watch(() => props.lighthouse, (newVal, oldVal) => {
+  console.log('🔍 [LighthouseResults] Lighthouse prop changed:', {
+    old: oldVal,
+    new: newVal,
+    hasAudits: !!newVal?.audits,
+    auditsKeys: newVal?.audits ? Object.keys(newVal.audits) : []
+  });
 }, { immediate: true, deep: true });
 
 // Función para validar la estructura de Lighthouse
 const validateLighthouseStructure = (data) => {
+  console.log('🔍 [LighthouseResults] Validating structure:', {
+    data,
+    isObject: typeof data === 'object',
+    hasAudits: !!data?.audits,
+    auditsType: data?.audits ? typeof data.audits : 'undefined'
+  });
+  
   if (!data) return false;
   if (typeof data !== 'object') return false;
   if (!data.audits || typeof data.audits !== 'object') return false;
@@ -88,10 +100,14 @@ const validateLighthouseStructure = (data) => {
 };
 
 const coreWebVitals = computed(() => {
-  console.log('Computing coreWebVitals with lighthouse:', JSON.stringify(props.lighthouse, null, 2));
+  console.log('🔍 [LighthouseResults] Computing coreWebVitals with lighthouse:', {
+    lighthouse: props.lighthouse,
+    hasAudits: !!props.lighthouse?.audits,
+    auditsKeys: props.lighthouse?.audits ? Object.keys(props.lighthouse.audits) : []
+  });
   
   if (!validateLighthouseStructure(props.lighthouse)) {
-    console.warn('Invalid Lighthouse structure:', props.lighthouse);
+    console.warn('❌ [LighthouseResults] Invalid Lighthouse structure:', props.lighthouse);
     return [];
   }
   
@@ -121,10 +137,14 @@ const coreWebVitals = computed(() => {
 
   const result = metrics.map(metric => {
     const audit = props.lighthouse.audits[metric.id];
-    console.log(`Processing metric ${metric.id}:`, audit);
+    console.log(`🔍 [LighthouseResults] Processing metric ${metric.id}:`, {
+      audit,
+      hasNumericValue: audit?.numericValue !== undefined,
+      hasScore: audit?.score !== undefined
+    });
     
     if (!audit || typeof audit !== 'object') {
-      console.warn(`Invalid audit for metric ${metric.id}:`, audit);
+      console.warn(`❌ [LighthouseResults] Invalid audit for metric ${metric.id}:`, audit);
       return null;
     }
 
@@ -132,7 +152,7 @@ const coreWebVitals = computed(() => {
     const score = audit.score;
 
     if (value === undefined && score === undefined) {
-      console.warn(`No valid data for metric ${metric.id}`);
+      console.warn(`❌ [LighthouseResults] No valid data for metric ${metric.id}`);
       return null;
     }
 
@@ -143,22 +163,33 @@ const coreWebVitals = computed(() => {
     };
   }).filter(metric => metric !== null);
 
-  console.log('Computed coreWebVitals:', result);
+  console.log('✅ [LighthouseResults] Computed coreWebVitals:', result);
   return result;
 });
 
 const performanceOpportunities = computed(() => {
-  console.log('Computing performanceOpportunities with lighthouse:', JSON.stringify(props.lighthouse, null, 2));
+  console.log('🔍 [LighthouseResults] Computing performanceOpportunities with lighthouse:', {
+    lighthouse: props.lighthouse,
+    hasAudits: !!props.lighthouse?.audits,
+    auditsKeys: props.lighthouse?.audits ? Object.keys(props.lighthouse.audits) : []
+  });
   
   if (!validateLighthouseStructure(props.lighthouse)) {
-    console.warn('Invalid Lighthouse structure:', props.lighthouse);
+    console.warn('❌ [LighthouseResults] Invalid Lighthouse structure:', props.lighthouse);
     return [];
   }
   
   const result = Object.entries(props.lighthouse.audits)
     .map(([id, audit]) => {
+      console.log(`🔍 [LighthouseResults] Processing audit ${id}:`, {
+        audit,
+        hasScore: audit?.score !== undefined,
+        hasDetails: !!audit?.details,
+        detailsType: audit?.details?.type
+      });
+      
       if (!audit || typeof audit !== 'object') {
-        console.warn(`Invalid audit found: ${id}`, audit);
+        console.warn(`❌ [LighthouseResults] Invalid audit found: ${id}`, audit);
         return null;
       }
 
@@ -170,15 +201,26 @@ const performanceOpportunities = computed(() => {
         details: audit.details
       };
     })
-    .filter(audit => 
-      audit !== null && 
-      audit.score !== undefined && 
-      audit.score < 0.9 && 
-      audit.details?.type === 'opportunity'
-    )
+    .filter(audit => {
+      const isValid = audit !== null && 
+        audit.score !== undefined && 
+        audit.score < 0.9 && 
+        audit.details?.type === 'opportunity';
+      
+      if (!isValid) {
+        console.log(`ℹ️ [LighthouseResults] Filtered out audit ${audit?.id}:`, {
+          isNull: audit === null,
+          hasScore: audit?.score !== undefined,
+          scoreBelowThreshold: audit?.score < 0.9,
+          isOpportunity: audit?.details?.type === 'opportunity'
+        });
+      }
+      
+      return isValid;
+    })
     .sort((a, b) => a.score - b.score);
 
-  console.log('Computed performanceOpportunities:', result);
+  console.log('✅ [LighthouseResults] Computed performanceOpportunities:', result);
   return result;
 });
 
