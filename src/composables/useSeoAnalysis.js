@@ -420,7 +420,7 @@ export function useSeoAnalysis() {
       }
 
       const data = response.data;
-      console.log('[useSeoAnalysis] Lighthouse recibido:', data);
+      console.log('[useSeoAnalysis] Lighthouse raw data:', JSON.stringify(data, null, 2));
 
       if (data.lighthouse) {
         // Normalizar la estructura de datos de Lighthouse
@@ -446,6 +446,7 @@ export function useSeoAnalysis() {
           });
         }
 
+        console.log('[useSeoAnalysis] Lighthouse normalized:', JSON.stringify(normalizedLighthouse, null, 2));
         lighthouse.value = normalizedLighthouse;
 
         // Extraer Core Web Vitals de los audits normalizados

@@ -71,7 +71,10 @@ const props = defineProps({
 });
 
 const coreWebVitals = computed(() => {
-  if (!props.lighthouse?.audits) return [];
+  if (!props.lighthouse?.audits) {
+    console.warn('Lighthouse audits is undefined or null');
+    return [];
+  }
   
   const metrics = [
     {
@@ -97,18 +100,25 @@ const coreWebVitals = computed(() => {
     }
   ];
 
-  return metrics.map(metric => ({
-    ...metric,
-    value: props.lighthouse.audits[metric.id]?.numericValue,
-    score: props.lighthouse.audits[metric.id]?.score
-  })).filter(metric => metric.value !== undefined);
+  return metrics.map(metric => {
+    const audit = props.lighthouse.audits[metric.id];
+    return {
+      ...metric,
+      value: audit?.numericValue,
+      score: audit?.score
+    };
+  }).filter(metric => metric.value !== undefined);
 });
 
 const performanceOpportunities = computed(() => {
-  if (!props.lighthouse?.audits) return [];
+  if (!props.lighthouse?.audits) {
+    console.warn('Lighthouse audits is undefined or null');
+    return [];
+  }
   
   return Object.values(props.lighthouse.audits)
     .filter(audit => 
+      audit && 
       audit.score !== undefined && 
       audit.score < 0.9 && 
       audit.details?.type === 'opportunity'
