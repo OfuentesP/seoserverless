@@ -78,7 +78,7 @@
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Time to First Byte (TTFB)</p>
             <p class="text-xs text-gray-400 mb-2">¿Qué tan rápido responde tu servidor? Un TTFB bajo mejora la experiencia y el SEO.</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouseAudits['time-to-first-byte']?.numericValue ?? resumen.ttfb) }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(resumen.ttfb) }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Start Render</p>
@@ -88,37 +88,27 @@
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">First Contentful Paint (FCP)</p>
             <p class="text-xs text-gray-400 mb-2">¿Cuándo se muestra el primer contenido? Impacta la percepción de velocidad.</p>
-            <ResultadosFCP
-              v-if="resumen?.fcp !== undefined && resumen?.fcp !== null"
-              :fcp="resumen.fcp"
-              :webpagetestResults="resumen"
-            />
+            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(resumen.fcp) }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Speed Index</p>
             <p class="text-xs text-gray-400 mb-2">¿Qué tan rápido se ve la página completa? Un índice bajo mejora la satisfacción.</p>
-            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(lighthouseAudits['speed-index']?.numericValue) }}</p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(resumen.si) }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Largest Contentful Paint (LCP)</p>
             <p class="text-xs text-gray-400 mb-2">¿Cuándo carga el elemento principal? Clave para la percepción de rapidez.</p>
-            <p :class="['text-3xl font-bold', getMetricColor(lighthouseAudits['largest-contentful-paint']?.numericValue, 'lcp')]">
-              {{ formatSeconds(lighthouseAudits['largest-contentful-paint']?.numericValue) }}
-            </p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(resumen.lcp) }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Cumulative Layout Shift (CLS)</p>
             <p class="text-xs text-gray-400 mb-2">¿Cuánto se mueve el diseño al cargar? Un CLS bajo evita frustración y pérdida de ventas.</p>
-            <p :class="['text-3xl font-bold', getMetricColor(lighthouseAudits['cumulative-layout-shift']?.numericValue, 'cls')]">
-              {{ formatCLS(lighthouseAudits['cumulative-layout-shift']?.numericValue) }}
-            </p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ formatCLS(resumen.cls) }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Total Blocking Time (TBT)</p>
             <p class="text-xs text-gray-400 mb-2">¿Cuánto tiempo la página no responde? Un TBT bajo mejora la interacción y conversión.</p>
-            <p :class="['text-3xl font-bold', getMetricColor(lighthouseAudits['total-blocking-time']?.numericValue, 'tbt')]">
-              {{ formatSeconds(lighthouseAudits['total-blocking-time']?.numericValue) }}
-            </p>
+            <p class="text-3xl font-bold text-white pdf-text">{{ formatSeconds(resumen.tbt) }}</p>
           </div>
           <div class="bg-gray-900/50 p-6 rounded-xl border border-gray-800 shadow-sm hover:shadow-md transition-shadow">
             <p class="text-gray-300 mb-2 font-medium pdf-text">Page Weight</p>

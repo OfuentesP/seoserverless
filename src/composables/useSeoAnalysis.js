@@ -271,11 +271,11 @@ export function useSeoAnalysis() {
         const metrics = lighthouse.value?.audits || {};
         resumen.value = {
           url: webpagetestResults.url || webpagetestResults.testUrl || null,
-          lcp: metrics['largest-contentful-paint']?.numericValue ?? null,
-          cls: metrics['cumulative-layout-shift']?.numericValue ?? null,
-          tbt: metrics['total-blocking-time']?.numericValue ?? null,
+          lcp: metrics['largest-contentful-paint']?.numericValue ?? webpagetestResults.lcp ?? null,
+          cls: metrics['cumulative-layout-shift']?.numericValue ?? webpagetestResults.cls ?? null,
+          tbt: metrics['total-blocking-time']?.numericValue ?? webpagetestResults.tbt ?? null,
           fcp: metrics['first-contentful-paint']?.numericValue ?? webpagetestResults.fcp ?? null,
-          si: metrics['speed-index']?.numericValue ?? null,
+          si: metrics['speed-index']?.numericValue ?? webpagetestResults.SpeedIndex ?? webpagetestResults.si ?? null,
           ttfb: webpagetestResults.TTFB ?? null,
           loadTime: webpagetestResults.loadTime ?? null,
           webpagetestUrl: webpagetestResults.detalles ?? null,
