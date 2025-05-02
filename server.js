@@ -240,6 +240,25 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
       if (!response.ok) {
         const errorText = await response.text();
         log(`❌ Error en la respuesta de WebPageTest: ${errorText}`, 'error');
+        
+        // Verificar si es un error de rate limiting
+        if (response.status === 429) {
+          return res.status(429).json({ 
+            success: false, 
+            message: 'Límite de solicitudes alcanzado. Por favor, intente más tarde.',
+            details: errorText
+          });
+        }
+        
+        // Verificar si es un error de autenticación
+        if (response.status === 401 || response.status === 403) {
+          return res.status(403).json({ 
+            success: false, 
+            message: 'Error de autenticación con WebPageTest. Verifique la API key.',
+            details: errorText
+          });
+        }
+        
         throw new Error(`WebPageTest API error: ${response.status} ${response.statusText}`);
       }
 
@@ -287,7 +306,8 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
         return res.status(500).json({ 
           success: false, 
           message: 'Estado inesperado de WebPageTest',
-          details: resultData
+          details: resultData,
+          statusCode: resultData.statusCode
         });
       } else {
         const errorText = await response.text();
@@ -303,7 +323,8 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
       return res.status(500).json({ 
         success: false, 
         message: 'Error al consultar WebPageTest',
-        error: fetchError.message
+        error: fetchError.message,
+        stack: fetchError.stack
       });
     }
   } catch (error) {
@@ -311,7 +332,8 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
     return res.status(500).json({ 
       success: false, 
       message: 'Error inesperado',
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 });

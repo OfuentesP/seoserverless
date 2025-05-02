@@ -199,9 +199,18 @@ export function useSeoAnalysis() {
         
         // Si es un error 500, intentar reintentar después de un tiempo
         if (axiosError.response?.status === 500) {
-          console.log('[useSeoAnalysis] ⚠️ Error 500, reintentando en 5 segundos...');
-          await wait(5000);
-          return { status: 'pending' };
+          const retryCount = axiosError.config?.retryCount || 0;
+          if (retryCount < 3) {
+            console.log(`[useSeoAnalysis] ⚠️ Error 500, reintentando en 5 segundos... (Intento ${retryCount + 1}/3)`);
+            await wait(5000);
+            return { status: 'pending' };
+          } else {
+            console.error('[useSeoAnalysis] ❌ Máximo número de reintentos alcanzado');
+            return { 
+              status: 'error', 
+              message: 'Error persistente en el servidor. Por favor, intente más tarde.'
+            };
+          }
         }
         
         return { 
