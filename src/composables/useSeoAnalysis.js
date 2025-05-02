@@ -165,13 +165,19 @@ export function useSeoAnalysis() {
           return { status: 'error', message: 'Bloqueado por WebPageTest' };
         }
         
-        if (response.status === 202 || response.data.status === 'pending') {
-          console.log(`[useSeoAnalysis] ⏳ Test en progreso, esperando ${POLLING_INTERVAL/1000} segundos...`);
-          estado.value = `⏳ Test en progreso (${Math.floor((Date.now() - inicioTimestamp)/1000)}s)`;
+        // Test en espera o en progreso
+        if (response.data.status === 'pending') {
+          const waitMessage = response.data.behindCount > 0 
+            ? `⏳ En cola: ${response.data.behindCount} tests por delante...`
+            : '⏳ Test en progreso...';
+          
+          console.log(`[useSeoAnalysis] ${waitMessage}`);
+          estado.value = waitMessage;
           await wait(POLLING_INTERVAL);
           return { status: 'pending' };
         }
 
+        // Test completado
         if (response.data.status === 'complete') {
           console.log(`[useSeoAnalysis] ✅ Test completado después de ${Math.floor((Date.now() - inicioTimestamp)/1000)}s`);
           return { status: 'complete', data: response.data.resumen };

@@ -266,14 +266,15 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
         const resultData = await response.json();
         log(`📊 Datos recibidos de WebPageTest: ${JSON.stringify(resultData, null, 2)}`);
 
-        // Test iniciando o en progreso
+        // Test en espera o en progreso
         if (resultData.statusCode === 100 || resultData.statusCode === 101) {
-          log(`⏳ Test en progreso. Estado: ${resultData.statusCode}`);
+          log(`⏳ Test en espera/progreso. Estado: ${resultData.statusCode}`);
           return res.json({ 
             status: 'pending', 
-            message: resultData.statusCode === 101 ? 'Iniciando test...' : 'Test en progreso...',
+            message: resultData.statusText || 'Test en progreso...',
             statusCode: resultData.statusCode,
-            testId: testId
+            testId: testId,
+            behindCount: resultData.data?.behindCount || 0
           });
         }
 
