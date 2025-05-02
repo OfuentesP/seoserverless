@@ -1,18 +1,18 @@
 <template>
-  <div v-if="lighthouse" class="mt-12 mx-auto max-w-3xl p-8 bg-white rounded-2xl shadow-2xl animate-fadeIn">
+  <div v-if="isDataAvailable" class="mt-12 mx-auto max-w-3xl p-8 bg-white rounded-2xl shadow-2xl animate-fadeIn">
     <h2 class="mt-5 pt-5 text-3xl font-extrabold text-green-700 mb-8 text-center tracking-tight flex items-center justify-center gap-2">
       <span>📊</span> Auditoría Lighthouse
     </h2>
     
     <!-- Categories Section -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-      <div v-for="(category, key) in lighthouse.categories" :key="key" 
+      <div v-for="(category, key) in safeData.categories" :key="key" 
            class="bg-gradient-to-br from-blue-50 to-white p-6 rounded-xl shadow text-center border border-blue-100">
         <p class="text-lg font-semibold text-gray-800 flex items-center justify-center gap-2">
           {{ getCategoryEmoji(key) }} {{ formatCategoryName(key) }}
         </p>
         <p class="text-3xl font-extrabold mt-2" :class="getScoreColorClass(category.score)">
-          {{ Math.round(category.score * 100) }}
+          {{ Math.round((category.score || 0) * 100) }}
         </p>
       </div>
     </div>
@@ -58,10 +58,20 @@
       </div>
     </div>
   </div>
+  <div v-else class="mt-12 mx-auto max-w-3xl p-8 bg-white rounded-2xl shadow-2xl">
+    <div class="text-center">
+      <p class="text-lg text-gray-600">
+        {{ loadingMessage }}
+      </p>
+      <div v-if="isLoading" class="mt-4">
+        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { computed, watch } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
   lighthouse: {
@@ -71,52 +81,65 @@ const props = defineProps({
       categories: {},
       audits: {}
     })
+  },
+  isLoading: {
+    type: Boolean,
+    default: false
   }
 });
 
-// Watcher para ver cuando cambia la prop
-watch(() => props.lighthouse, (newVal) => {
-  console.log('🔍 [LighthouseResults] Props.lighthouse cambió:', {
-    value: newVal,
-    type: typeof newVal,
-    isProxy: !!newVal?.__v_isProxy,
-    keys: newVal ? Object.keys(newVal) : [],
-    hasAudits: !!newVal?.audits,
-    auditsType: typeof newVal?.audits,
-    raw: JSON.stringify(newVal)
-  });
-}, { immediate: true, deep: true });
+// Estado local para tracking de errores
+const hasError = ref(false);
+const errorMessage = ref('');
 
-// Computed para debuggear la prop lighthouse
-const debugLighthouse = computed(() => {
-  console.log('🔍 [LighthouseResults] Debugging lighthouse prop:', {
-    prop: props.lighthouse,
-    type: typeof props.lighthouse,
-    isProxy: !!props.lighthouse?.__v_isProxy,
-    hasAudits: !!props.lighthouse?.audits,
-    auditsType: typeof props.lighthouse?.audits,
-    keys: props.lighthouse ? Object.keys(props.lighthouse) : []
-  });
-  return props.lighthouse;
+// Computed para verificar si los datos están disponibles
+const isDataAvailable = computed(() => {
+  try {
+    if (!props.lighthouse) {
+      console.warn('⚠️ [LighthouseResults] Lighthouse prop es null o undefined');
+      return false;
+    }
+
+    if (typeof props.lighthouse !== 'object') {
+      console.warn('⚠️ [LighthouseResults] Lighthouse prop no es un objeto:', typeof props.lighthouse);
+      return false;
+    }
+
+    const hasValidData = props.lighthouse.categories && props.lighthouse.audits;
+    console.log('🔍 [LighthouseResults] Verificando datos:', {
+      hasCategories: !!props.lighthouse.categories,
+      hasAudits: !!props.lighthouse.audits,
+      isValid: hasValidData
+    });
+
+    return hasValidData;
+  } catch (error) {
+    console.error('❌ [LighthouseResults] Error verificando datos:', error);
+    hasError.value = true;
+    errorMessage.value = error.message;
+    return false;
+  }
 });
 
-// Computed para asegurar que siempre tenemos una estructura válida
-const safeData = computed(() => {
-  console.log('🔍 [LighthouseResults] Validando datos:', {
-    hasLighthouse: !!props.lighthouse,
-    type: typeof props.lighthouse,
-    raw: props.lighthouse
-  });
+// Computed para mensaje de carga/error
+const loadingMessage = computed(() => {
+  if (hasError.value) {
+    return `Error: ${errorMessage.value}`;
+  }
+  if (props.isLoading) {
+    return 'Obteniendo resultados de Lighthouse...';
+  }
+  return 'Los datos de Lighthouse no están disponibles en este momento.';
+});
 
-  // Si no hay datos o no es un objeto, retornar estructura base
-  if (!props.lighthouse || typeof props.lighthouse !== 'object') {
+// Computed para datos seguros
+const safeData = computed(() => {
+  if (!isDataAvailable.value) {
     return {
       categories: {},
       audits: {}
     };
   }
-
-  // Asegurar que tenemos las propiedades necesarias
   return {
     categories: props.lighthouse.categories || {},
     audits: props.lighthouse.audits || {}
