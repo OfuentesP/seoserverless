@@ -150,77 +150,74 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { toRaw } from 'vue';
 import ExportButton from '../components/ExportButton.vue';
 import MetaAnalysis from '../components/MetaAnalysis.vue';
 import ResultadosFCP from '../components/ResultadosFCP.vue';
+import { useSeoAnalysis } from '../composables/useSeoAnalysis';
 
-// Obtener estado de la ruta
+const router = useRouter();
 const route = useRoute();
-const state = window.history.state || {};
-const resumen = ref(state.resumen || {});
 
-// Debug logs para el estado inicial
-console.log('🔍 [Resultados] Estado de la ruta:', window.history.state);
-console.log('🔍 [Resultados] Resumen completo:', resumen.value);
-console.log('🔍 [Resultados] FCP en resumen:', resumen.value?.fcp);
-console.log('🔍 [Resultados] WebPageTest results:', resumen.value?.webpagetestResults);
+// Inicializar estado desde la ruta o el composable
+const { resumen: safeResumen, estado: estadoComposable } = useSeoAnalysis();
 
-// Asegurarnos de que el FCP se pasa correctamente
-const webpagetestResults = computed(() => {
-  const results = {
-    ...resumen.value,
-    fcp: resumen.value?.fcp || resumen.value?.webpagetestResults?.fcp,
-    loadTime: resumen.value?.loadTime,
-    ttfb: resumen.value?.ttfb,
-    totalSize: resumen.value?.totalSize,
-    requests: resumen.value?.requests
-  };
-  console.log('🔍 [Resultados] WebPageTest results procesados:', results);
-  return results;
+// Estado local con valores por defecto
+const estado = ref(route.state?.estado || estadoComposable.value || 'Cargando resultados...');
+const resumen = ref(route.state?.resumen || safeResumen.value || {
+  lcp: null,
+  cls: null,
+  tbt: null,
+  fcp: null,
+  si: null,
+  ttfb: null,
+  loadTime: null,
+  webpagetestUrl: null
 });
 
-// Inicializar el estado con valores por defecto
-const estado = ref(state.estado || '⏳ Esperando resultados...');
-const resumenPlano = ref({
-  ...resumen.value,
-  fcp: resumen.value?.fcp || null,
-  loadTime: resumen.value?.loadTime || null,
-  ttfb: resumen.value?.ttfb || null,
-  totalSize: resumen.value?.totalSize || null,
-  requests: resumen.value?.requests || null
-});
-
-// Debug logs
-console.log('[DEBUG] Estado inicial:', estado.value);
-console.log('[DEBUG] Resumen inicial:', resumenPlano.value);
-console.log('[DEBUG] State completo:', state);
-
-// Observar cambios en el estado de la ruta
-watch(() => window.history.state, (newState) => {
-  console.log('🔍 [Resultados] Estado de la ruta actualizado:', newState);
-  if (newState?.resumen) {
-    resumen.value = newState.resumen;
-    estado.value = newState.estado || '⏳ Esperando resultados...';
-    resumenPlano.value = {
-      ...newState.resumen,
-      fcp: newState.resumen.fcp || null,
-      loadTime: newState.resumen.loadTime || null,
-      ttfb: newState.resumen.ttfb || null,
-      totalSize: newState.resumen.totalSize || null,
-      requests: newState.resumen.requests || null
-    };
-    console.log('🔍 [Resultados] Estado actualizado:', {
-      resumen: resumen.value,
-      estado: estado.value,
-      resumenPlano: resumenPlano.value
+// Computed property para verificar si tenemos datos
+const hasData = computed(() => {
+  try {
+    const hasResumen = resumen.value && Object.keys(resumen.value).length > 0;
+    const hasWebPageTestData = resumen.value?.loadTime !== null || 
+                              resumen.value?.totalSize !== null || 
+                              resumen.value?.fcp !== null;
+    
+    console.log('🔍 [Resultados] Verificación de datos:', {
+      hasResumen,
+      hasWebPageTestData,
+      resumen: resumen.value
     });
+    
+    return hasResumen && hasWebPageTestData;
+  } catch (error) {
+    console.error('❌ [Resultados] Error verificando datos:', error);
+    return false;
   }
-}, { deep: true, immediate: true });
+});
 
-const lighthouseAudits = computed(() => state.lighthouse?.audits || {});
-const sitemapData = computed(() => state.sitemapResults || {});
+// Computed property para los resultados de WebPageTest
+const webpagetestResults = computed(() => {
+  try {
+    const results = {
+      ...resumen.value,
+      fcp: resumen.value?.fcp,
+      loadTime: resumen.value?.loadTime,
+      ttfb: resumen.value?.ttfb,
+      totalSize: resumen.value?.totalSize,
+      requests: resumen.value?.requests
+    };
+    console.log('🔍 [Resultados] WebPageTest results procesados:', results);
+    return results;
+  } catch (error) {
+    console.error('❌ [Resultados] Error procesando WebPageTest results:', error);
+    return {};
+  }
+});
+
+const lighthouseAudits = computed(() => route.state?.lighthouse?.audits || {});
+const sitemapData = computed(() => route.state?.sitemapResults || {});
 
 const getMetricColor = (value, type) => {
   if (!value) return 'text-gray-400';

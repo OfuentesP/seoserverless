@@ -270,6 +270,46 @@ export function useSeoAnalysis() {
     blockMessage.value = '';
   };
 
+  // Función para validar y limpiar datos de Lighthouse
+  const cleanLighthouseData = (data) => {
+    if (!data) return { categories: {}, audits: {}, fetchTime: null, finalUrl: null, error: null };
+    
+    return {
+      categories: data.categories || {},
+      audits: data.audits || {},
+      fetchTime: data.fetchTime || null,
+      finalUrl: data.finalUrl || null,
+      error: null
+    };
+  };
+
+  // Función para validar y limpiar datos del resumen
+  const cleanResumenData = (data) => {
+    if (!data) return {
+      lcp: null,
+      cls: null,
+      tbt: null,
+      fcp: null,
+      si: null,
+      ttfb: null,
+      loadTime: null,
+      webpagetestUrl: null,
+      error: null
+    };
+    
+    return {
+      lcp: data.lcp ?? null,
+      cls: data.cls ?? null,
+      tbt: data.tbt ?? null,
+      fcp: data.fcp ?? null,
+      si: data.si ?? null,
+      ttfb: data.ttfb ?? null,
+      loadTime: data.loadTime ?? null,
+      webpagetestUrl: data.webpagetestUrl ?? null,
+      error: null
+    };
+  };
+
   // The function that handles the analysis of the SEO data
   async function analizar(inputUrl) {
     try {
@@ -448,20 +488,20 @@ export function useSeoAnalysis() {
 
         await nextTick();
 
-        // Deep clone the reactive objects to remove the Proxy
-        const resumenPlano = JSON.parse(JSON.stringify(resumen.value));
-        const lighthousePlano = JSON.parse(JSON.stringify(lighthouse.value));
-        const sitemapResultsPlano = JSON.parse(JSON.stringify(sitemapResults.value));
+        // Asegurar que los datos estén limpios antes de la navegación
+        const cleanState = {
+          resumen: cleanResumenData(resumen.value),
+          lighthouse: cleanLighthouseData(lighthouse.value),
+          sitemapResults: sitemapResults.value,
+          estado: estado.value
+        };
 
-        // Use the router.push() with the cloned data
+        console.log('[useSeoAnalysis] Estado limpio para navegación:', cleanState);
+
+        // Usar el router.push() con los datos limpios
         router.push({
           path: '/resultados',
-          state: {
-            resumen: resumenPlano,
-            lighthouse: lighthousePlano,
-            sitemapResults: sitemapResultsPlano,
-            estado: estado.value
-          }
+          state: cleanState
         });
 
         // Debug logs
