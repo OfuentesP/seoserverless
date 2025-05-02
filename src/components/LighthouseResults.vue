@@ -67,13 +67,10 @@ const props = defineProps({
   lighthouse: {
     type: Object,
     required: true,
-    default: () => {
-      console.log('🔍 [LighthouseResults] Llamando al default prop');
-      return {
-        categories: {},
-        audits: {}
-      };
-    }
+    default: () => ({
+      categories: {},
+      audits: {}
+    })
   }
 });
 
@@ -103,24 +100,16 @@ const debugLighthouse = computed(() => {
   return props.lighthouse;
 });
 
-// Computed property para validar y obtener los datos de Lighthouse de forma segura
-const lighthouseData = computed(() => {
-  console.log('🔍 [LighthouseResults] Calculando lighthouseData:', {
-    rawProp: props.lighthouse,
-    debugValue: debugLighthouse.value,
+// Computed para asegurar que siempre tenemos una estructura válida
+const safeData = computed(() => {
+  console.log('🔍 [LighthouseResults] Validando datos:', {
     hasLighthouse: !!props.lighthouse,
     type: typeof props.lighthouse,
-    isProxy: !!props.lighthouse?.__v_isProxy,
-    hasAudits: !!props.lighthouse?.audits,
-    auditsType: typeof props.lighthouse?.audits
+    raw: props.lighthouse
   });
 
-  // Si no hay datos, retornar estructura vacía
+  // Si no hay datos o no es un objeto, retornar estructura base
   if (!props.lighthouse || typeof props.lighthouse !== 'object') {
-    console.warn('⚠️ [LighthouseResults] No hay datos de Lighthouse válidos:', {
-      value: props.lighthouse,
-      type: typeof props.lighthouse
-    });
     return {
       categories: {},
       audits: {}
@@ -128,32 +117,14 @@ const lighthouseData = computed(() => {
   }
 
   // Asegurar que tenemos las propiedades necesarias
-  const safeData = {
+  return {
     categories: props.lighthouse.categories || {},
     audits: props.lighthouse.audits || {}
   };
-
-  console.log('✅ [LighthouseResults] Datos normalizados:', {
-    rawCategories: props.lighthouse.categories,
-    rawAudits: props.lighthouse.audits,
-    safeCategories: safeData.categories,
-    safeAudits: safeData.audits,
-    hasCategories: !!safeData.categories,
-    hasAudits: !!safeData.audits,
-    categoriesCount: Object.keys(safeData.categories).length,
-    auditsCount: Object.keys(safeData.audits).length
-  });
-
-  return safeData;
 });
 
 const coreWebVitals = computed(() => {
-  const data = lighthouseData.value;
-  console.log('🔍 [LighthouseResults] Calculando Core Web Vitals con:', {
-    hasAudits: !!data.audits,
-    auditsCount: Object.keys(data.audits).length
-  });
-
+  const data = safeData.value;
   const metrics = [
     {
       id: 'largest-contentful-paint',
@@ -180,12 +151,6 @@ const coreWebVitals = computed(() => {
 
   return metrics.map(metric => {
     const audit = data.audits[metric.id] || {};
-    console.log(`🔍 [LighthouseResults] Procesando métrica ${metric.id}:`, {
-      hasAudit: !!audit,
-      hasValue: audit.numericValue !== undefined,
-      hasScore: audit.score !== undefined
-    });
-
     return {
       ...metric,
       value: audit.numericValue || 0,
@@ -195,19 +160,10 @@ const coreWebVitals = computed(() => {
 });
 
 const performanceOpportunities = computed(() => {
-  const data = lighthouseData.value;
-  console.log('🔍 [LighthouseResults] Calculando oportunidades con:', {
-    hasAudits: !!data.audits,
-    auditsCount: Object.keys(data.audits).length
-  });
-
+  const data = safeData.value;
   return Object.entries(data.audits)
     .map(([id, audit]) => {
-      if (!audit || typeof audit !== 'object') {
-        console.log(`⚠️ [LighthouseResults] Audit inválido: ${id}`);
-        return null;
-      }
-
+      if (!audit || typeof audit !== 'object') return null;
       return {
         id,
         title: audit.title || id,
@@ -216,13 +172,8 @@ const performanceOpportunities = computed(() => {
         details: audit.details || {}
       };
     })
-    .filter(audit => {
-      if (!audit) return false;
-      const isValid = audit.score !== undefined && audit.score < 0.9 && audit.details?.type === 'opportunity';
-      console.log(`🔍 [LighthouseResults] Filtrando audit ${audit.id}:`, { isValid });
-      return isValid;
-    })
-    .sort((a, b) => (a.score || 0) - (b.score || 0));
+    .filter(audit => audit && audit.score < 0.9 && audit.details?.type === 'opportunity')
+    .sort((a, b) => a.score - b.score);
 });
 
 const formatCategoryName = (category) => {
