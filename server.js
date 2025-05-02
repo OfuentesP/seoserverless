@@ -229,107 +229,108 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
     }
 
     log(`🔍 Consultando resultados para testId: ${testId}`);
-    const resultUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}`;
+    const apiKey = process.env.WPT_API_KEY;
+    const resultUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}&k=${apiKey}`;
     
     try {
+      log(`📡 Haciendo solicitud a WebPageTest (ID: ${testId})`);
       const response = await fetch(resultUrl);
       const contentType = response.headers.get("content-type");
       
       log(`📊 Respuesta recibida - Status: ${response.status}, Content-Type: ${contentType}`);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        log(`❌ Error en la respuesta de WebPageTest: ${errorText}`, 'error');
-        
-        // Verificar si es un error de rate limiting
-        if (response.status === 429) {
-          return res.status(429).json({ 
-            success: false, 
-            message: 'Límite de solicitudes alcanzado. Por favor, intente más tarde.',
-            details: errorText
-          });
-        }
-        
-        // Verificar si es un error de autenticación
-        if (response.status === 401 || response.status === 403) {
-          return res.status(403).json({ 
-            success: false, 
-            message: 'Error de autenticación con WebPageTest. Verifique la API key.',
-            details: errorText
-          });
-        }
-        
-        throw new Error(`WebPageTest API error: ${response.status} ${response.statusText}`);
-      }
+      // Get the raw response text first
+      const responseText = await response.text();
+      log(`📝 Contenido de la respuesta: ${responseText}`);
 
-      if (contentType && contentType.includes("application/json")) {
-        const resultData = await response.json();
-        log(`📊 Datos recibidos de WebPageTest: ${JSON.stringify(resultData, null, 2)}`);
-
-        // Test en espera o en progreso
-        if (resultData.statusCode === 100 || resultData.statusCode === 101) {
-          log(`⏳ Test en espera/progreso. Estado: ${resultData.statusCode}`);
-          return res.json({ 
-            status: 'pending', 
-            message: resultData.statusText || 'Test en progreso...',
-            statusCode: resultData.statusCode,
-            testId: testId,
-            behindCount: resultData.data?.behindCount || 0
-          });
-        }
-
-        // Test completado
-        if (resultData.statusCode === 200 && resultData.data?.runs) {
-          const firstView = resultData.data.runs['1'].firstView;
-          const resumen = {
-            url: resultData.data.testUrl || null,
-            loadTime: firstView?.loadTime || null,
-            SpeedIndex: firstView?.SpeedIndex || null,
-            ttfb: firstView?.TTFB || null,
-            totalSize: firstView?.bytesIn || null,
-            requests: firstView?.requests || null,
-            lcp: firstView?.largestContentfulPaint || null,
-            cls: firstView?.cumulativeLayoutShift || null,
-            tbt: firstView?.TotalBlockingTime || null,
-            detalles: resultData.data.summary,
-            testId: testId,
-          };
-          
-          log(`✅ Test completado exitosamente para: ${testId}`);
-          return res.json({ 
-            status: 'complete', 
-            resumen 
-          });
-        }
-
-        // Estado inesperado
-        log(`⚠️ Estado inesperado de WebPageTest: ${resultData.statusCode}`, 'warn');
+      let resultData;
+      try {
+        resultData = JSON.parse(responseText);
+      } catch (parseError) {
+        log(`❌ Error parseando JSON: ${parseError.message}`, 'error');
         return res.status(500).json({ 
           success: false, 
-          message: 'Estado inesperado de WebPageTest',
-          details: resultData,
-          statusCode: resultData.statusCode
-        });
-      } else {
-        const errorText = await response.text();
-        log(`❌ Respuesta no-JSON recibida: ${errorText}`, 'error');
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Respuesta inválida de WebPageTest',
-          details: errorText
+          message: 'Error parseando respuesta JSON',
+          error: parseError.message,
+          rawResponse: responseText
         });
       }
+
+      // Handle test status codes
+      if (resultData.statusCode === 100) {
+        log('⏳ Test en progreso');
+        return res.json({ 
+          status: 'pending',
+          message: 'Test en progreso',
+          statusCode: resultData.statusCode,
+          testId
+        });
+      }
+
+      if (resultData.statusCode === 101) {
+        const behindCount = resultData.data?.behindCount || 0;
+        log(`⏳ Test en cola (${behindCount} tests por delante)`);
+        return res.json({
+          status: 'pending',
+          message: `En cola: ${behindCount} tests por delante`,
+          statusCode: resultData.statusCode,
+          behindCount,
+          testId
+        });
+      }
+
+      // Test completed successfully
+      if (resultData.statusCode === 200 && resultData.data?.runs) {
+        const firstView = resultData.data.runs['1']?.firstView;
+        if (!firstView) {
+          throw new Error('Datos de firstView no encontrados en la respuesta');
+        }
+
+        const resumen = {
+          url: resultData.data.testUrl || null,
+          loadTime: firstView.loadTime || null,
+          SpeedIndex: firstView.SpeedIndex || null,
+          ttfb: firstView.TTFB || null,
+          totalSize: firstView.bytesIn || null,
+          requests: firstView.requests || null,
+          lcp: firstView.largestContentfulPaint || null,
+          cls: firstView.cumulativeLayoutShift || null,
+          tbt: firstView.TotalBlockingTime || null,
+          detalles: resultData.data.summary || null,
+          testId
+        };
+
+        log(`✅ Test completado exitosamente para: ${testId}`);
+        return res.json({ 
+          status: 'complete',
+          resumen,
+          testId
+        });
+      }
+
+      // Handle other status codes
+      log(`⚠️ Estado inesperado de WebPageTest: ${resultData.statusCode}`, 'warn');
+      return res.json({ 
+        status: 'pending',
+        message: resultData.statusText || 'Estado desconocido',
+        statusCode: resultData.statusCode,
+        testId
+      });
+
     } catch (fetchError) {
       log(`❌ Error al consultar WebPageTest: ${fetchError.message}`, 'error');
+      log(`Stack trace: ${fetchError.stack}`, 'error');
       return res.status(500).json({ 
         success: false, 
         message: 'Error al consultar WebPageTest',
         error: fetchError.message,
-        stack: fetchError.stack
+        stack: fetchError.stack,
+        url: resultUrl
       });
     }
   } catch (error) {
     log(`❌ Error inesperado: ${error.message}`, 'error');
+    log(`Stack trace: ${error.stack}`, 'error');
     return res.status(500).json({ 
       success: false, 
       message: 'Error inesperado',

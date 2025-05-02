@@ -156,6 +156,7 @@ export function useSeoAnalysis() {
       
       try {
         const response = await axios.get(`/api/webpagetest/results/${testId}`);
+        console.log('[useSeoAnalysis] 📊 Respuesta recibida:', response.data);
         
         // Verificar si estamos bloqueados
         if (isBlockedByWebPageTest(response)) {
@@ -167,27 +168,34 @@ export function useSeoAnalysis() {
         
         // Test en espera o en progreso
         if (response.data.status === 'pending') {
-          const waitMessage = response.data.behindCount > 0 
-            ? `⏳ En cola: ${response.data.behindCount} tests por delante...`
-            : '⏳ Test en progreso...';
+          const message = response.data.message || '⏳ Test en progreso...';
+          console.log(`[useSeoAnalysis] ${message}`);
+          estado.value = message;
           
-          console.log(`[useSeoAnalysis] ${waitMessage}`);
-          estado.value = waitMessage;
+          // Actualizar el progreso basado en el estado
+          if (response.data.statusCode === 101) {
+            const behindCount = response.data.behindCount || 0;
+            progress.value = Math.max(20, Math.min(40, 40 - (behindCount / 2)));
+          } else {
+            progress.value = Math.min(60, progress.value + 2);
+          }
+          
           await wait(POLLING_INTERVAL);
           return { status: 'pending' };
         }
 
         // Test completado
-        if (response.data.status === 'complete') {
+        if (response.data.status === 'complete' && response.data.resumen) {
           console.log(`[useSeoAnalysis] ✅ Test completado después de ${Math.floor((Date.now() - inicioTimestamp)/1000)}s`);
+          progress.value = 80;
           return { status: 'complete', data: response.data.resumen };
         }
 
-        // Manejar otros estados
-        console.error(`[useSeoAnalysis] ❌ Estado inesperado: ${response.data.status || 'unknown'}`);
+        // Error o estado inesperado
+        console.error('[useSeoAnalysis] ❌ Estado inesperado:', response.data);
         return { 
           status: 'error', 
-          message: `Estado inesperado: ${response.data.message || 'Error desconocido'}`
+          message: response.data.message || 'Estado inesperado en la respuesta'
         };
       } catch (axiosError) {
         console.error('[useSeoAnalysis] ❌ Error en la solicitud:', {
@@ -196,13 +204,6 @@ export function useSeoAnalysis() {
           message: axiosError.message
         });
         
-        // Verificar si el error es por bloqueo
-        if (axiosError.response && (axiosError.response.status === 429 || axiosError.response.status === 403)) {
-          isBlocked.value = true;
-          blockMessage.value = 'WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.';
-          return { status: 'error', message: 'Bloqueado por WebPageTest' };
-        }
-        
         // Si es un error 500, intentar reintentar después de un tiempo
         if (axiosError.response?.status === 500) {
           const retryCount = axiosError.config?.retryCount || 0;
@@ -210,18 +211,12 @@ export function useSeoAnalysis() {
             console.log(`[useSeoAnalysis] ⚠️ Error 500, reintentando en 5 segundos... (Intento ${retryCount + 1}/3)`);
             await wait(5000);
             return { status: 'pending' };
-          } else {
-            console.error('[useSeoAnalysis] ❌ Máximo número de reintentos alcanzado');
-            return { 
-              status: 'error', 
-              message: 'Error persistente en el servidor. Por favor, intente más tarde.'
-            };
           }
         }
         
         return { 
           status: 'error', 
-          message: axiosError.response?.data?.message || axiosError.message 
+          message: axiosError.response?.data?.message || axiosError.message
         };
       }
     } catch (error) {
