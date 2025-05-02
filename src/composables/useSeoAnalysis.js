@@ -67,9 +67,19 @@ export function useSeoAnalysis() {
     si: null,
     ttfb: null,
     loadTime: null,
-    webpagetestUrl: null
+    webpagetestUrl: null,
+    error: null
   });
-  const lighthouse = ref(null);
+  
+  // Initialize lighthouse with safe default values
+  const lighthouse = ref({
+    audits: {},
+    categories: {},
+    fetchTime: null,
+    finalUrl: null,
+    error: null
+  });
+  
   const lighthouseCategorias = ref([]);
   const sitemapResults = ref(null);
 
@@ -83,6 +93,30 @@ export function useSeoAnalysis() {
   // Computed values for checking errors
   const hasError = computed(() => resumen.value.error !== null);
   const errorMessage = computed(() => resumen.value.error?.message || 'Error desconocido');
+
+  // Add new computed properties for safe data access
+  const lighthouseAudits = computed(() => lighthouse.value?.audits || {});
+  const lighthouseCategories = computed(() => lighthouse.value?.categories || {});
+  
+  // Add validation helper
+  const validateLighthouseData = (data) => {
+    if (!data) {
+      console.error('[useSeoAnalysis] ❌ Lighthouse data is null or undefined');
+      return false;
+    }
+    
+    if (!data.audits) {
+      console.error('[useSeoAnalysis] ❌ Lighthouse audits are missing');
+      return false;
+    }
+    
+    if (!data.categories) {
+      console.error('[useSeoAnalysis] ❌ Lighthouse categories are missing');
+      return false;
+    }
+    
+    return true;
+  };
 
   let inicioTimestamp = null;
 
@@ -196,7 +230,7 @@ export function useSeoAnalysis() {
     resumen.value.error = null;
     url.value = inputUrl;
     sitemapResults.value = null;
-    lighthouse.value = null;
+    lighthouse.value = { audits: {}, categories: {}, fetchTime: null, finalUrl: null, error: null };
     estado.value = '';
 
     try {
@@ -410,101 +444,48 @@ export function useSeoAnalysis() {
   }
 
   async function obtenerLighthouseDesdeBackend(testId) {
-    console.log('[useSeoAnalysis] 🔍 Obteniendo resultados de Lighthouse para testId:', testId);
     try {
-      estado.value = '🔍 Obteniendo resultados de Lighthouse...';
-      const response = await axios.get(`/api/lighthouse/results/${testId}`);
+      console.log(`[useSeoAnalysis] 🔍 Obteniendo datos de Lighthouse para testId: ${testId}`);
+      const response = await axiosInstance.get(`/api/lighthouse/${testId}`);
       
-      console.log('[useSeoAnalysis] 📊 Respuesta raw de Lighthouse:', {
-        success: response.data.success,
-        hasLighthouse: !!response.data.lighthouse,
-        data: response.data
-      });
+      if (!response.data) {
+        throw new Error('No se recibieron datos de Lighthouse');
+      }
 
-      // Estructura base que siempre devolveremos
-      const defaultLighthouse = {
-        categories: {},
-        audits: {}
+      // Validate the lighthouse data
+      if (!validateLighthouseData(response.data)) {
+        throw new Error('Datos de Lighthouse incompletos o inválidos');
+      }
+
+      // Safely update the lighthouse ref with validated data
+      lighthouse.value = {
+        audits: response.data.audits || {},
+        categories: response.data.categories || {},
+        fetchTime: response.data.fetchTime || null,
+        finalUrl: response.data.finalUrl || url.value,
+        error: null
       };
 
-      if (!response.data.success) {
-        console.warn('[useSeoAnalysis] ⚠️ Respuesta no exitosa:', response.data.message);
-        lighthouse.value = defaultLighthouse;
-        return false;
-      }
+      // Update categories safely
+      lighthouseCategorias.value = Object.entries(response.data.categories || {}).map(([key, value]) => ({
+        id: key,
+        title: value.title || 'Unknown',
+        score: value.score || 0
+      }));
 
-      const data = response.data;
-
-      if (!data.lighthouse || typeof data.lighthouse !== 'object') {
-        console.warn('[useSeoAnalysis] ⚠️ No hay datos de Lighthouse válidos');
-        lighthouse.value = defaultLighthouse;
-        return false;
-      }
-
-      // Asegurar que la estructura base existe
-      const normalizedLighthouse = {
-        categories: data.lighthouse.categories || {},
-        audits: data.lighthouse.audits || {}
-      };
-
-      console.log('[useSeoAnalysis] ✅ Estructura normalizada:', {
-        hasCategories: !!normalizedLighthouse.categories,
-        hasAudits: !!normalizedLighthouse.audits,
-        categoriesCount: Object.keys(normalizedLighthouse.categories).length,
-        auditsCount: Object.keys(normalizedLighthouse.audits).length
-      });
-
-      // Validar que tenemos los datos mínimos necesarios
-      const requiredAudits = ['largest-contentful-paint', 'cumulative-layout-shift', 'total-blocking-time'];
-      const hasRequiredAudits = requiredAudits.every(auditId => 
-        normalizedLighthouse.audits[auditId] && 
-        typeof normalizedLighthouse.audits[auditId] === 'object'
-      );
-
-      if (!hasRequiredAudits) {
-        console.warn('[useSeoAnalysis] ⚠️ Faltan audits requeridos:', {
-          missingAudits: requiredAudits.filter(auditId => !normalizedLighthouse.audits[auditId])
-        });
-      }
-
-      // Asignar el valor normalizado
-      lighthouse.value = normalizedLighthouse;
-
-      // Extraer Core Web Vitals de los audits normalizados
-      if (normalizedLighthouse.audits) {
-        const lcp = normalizedLighthouse.audits['largest-contentful-paint']?.numericValue;
-        const cls = normalizedLighthouse.audits['cumulative-layout-shift']?.numericValue;
-        const tbt = normalizedLighthouse.audits['total-blocking-time']?.numericValue;
-
-        console.log('[useSeoAnalysis] 📊 Core Web Vitals extraídos:', { lcp, cls, tbt });
-
-        // Asignar Core Web Vitals al resumen
-        if (resumen.value) {
-          resumen.value = {
-            ...resumen.value,
-            lcp: lcp || resumen.value.lcp,
-            cls: cls || resumen.value.cls,
-            tbt: tbt || resumen.value.tbt
-          };
-        }
-      }
-
-      console.log('[useSeoAnalysis] ✅ Lighthouse final:', {
-        hasCategories: !!lighthouse.value.categories,
-        hasAudits: !!lighthouse.value.audits,
-        categoriesCount: Object.keys(lighthouse.value.categories).length,
-        auditsCount: Object.keys(lighthouse.value.audits).length
-      });
-
-      estado.value = '✅ Análisis completado.';
       return true;
     } catch (error) {
-      console.error('[useSeoAnalysis] ❌ Error obteniendo Lighthouse:', {
-        message: error.message,
-        response: error.response?.data
-      });
-      lighthouse.value = { categories: {}, audits: {} };
-      estado.value = '❌ Error obteniendo resultados de Lighthouse.';
+      console.error('[useSeoAnalysis] ❌ Error obteniendo datos de Lighthouse:', error);
+      
+      // Set error state in lighthouse ref
+      lighthouse.value = {
+        audits: {},
+        categories: {},
+        fetchTime: null,
+        finalUrl: null,
+        error: extractErrorDetails(error)
+      };
+      
       return false;
     }
   }
@@ -524,15 +505,17 @@ export function useSeoAnalysis() {
     estado,
     resumen,
     lighthouse,
+    lighthouseAudits,
+    lighthouseCategories,
     lighthouseCategorias,
     sitemapResults,
     isLoading,
     progress,
     currentStep,
-    hasError,
-    errorMessage,
     isBlocked,
     blockMessage,
+    hasError,
+    errorMessage,
     analizar
   };
 }
