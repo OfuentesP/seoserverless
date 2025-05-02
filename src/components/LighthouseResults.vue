@@ -67,50 +67,93 @@ const props = defineProps({
   lighthouse: {
     type: Object,
     required: true,
-    default: () => ({
-      categories: {},
-      audits: {}
-    })
+    default: () => {
+      console.log('🔍 [LighthouseResults] Llamando al default prop');
+      return {
+        categories: {},
+        audits: {}
+      };
+    }
   }
 });
 
-// Agregar un watcher para depuración
-watch(() => props.lighthouse, (newVal, oldVal) => {
-  console.log('🔍 [LighthouseResults] Lighthouse prop changed:', {
-    old: oldVal,
-    new: newVal,
+// Watcher para ver cuando cambia la prop
+watch(() => props.lighthouse, (newVal) => {
+  console.log('🔍 [LighthouseResults] Props.lighthouse cambió:', {
+    value: newVal,
+    type: typeof newVal,
+    isProxy: !!newVal?.__v_isProxy,
+    keys: newVal ? Object.keys(newVal) : [],
     hasAudits: !!newVal?.audits,
-    auditsKeys: newVal?.audits ? Object.keys(newVal.audits) : []
+    auditsType: typeof newVal?.audits,
+    raw: JSON.stringify(newVal)
   });
 }, { immediate: true, deep: true });
 
-// Función para validar la estructura de Lighthouse
-const validateLighthouseStructure = (data) => {
-  console.log('🔍 [LighthouseResults] Validating structure:', {
-    data,
-    isObject: typeof data === 'object',
-    hasAudits: !!data?.audits,
-    auditsType: data?.audits ? typeof data.audits : 'undefined'
+// Computed para debuggear la prop lighthouse
+const debugLighthouse = computed(() => {
+  console.log('🔍 [LighthouseResults] Debugging lighthouse prop:', {
+    prop: props.lighthouse,
+    type: typeof props.lighthouse,
+    isProxy: !!props.lighthouse?.__v_isProxy,
+    hasAudits: !!props.lighthouse?.audits,
+    auditsType: typeof props.lighthouse?.audits,
+    keys: props.lighthouse ? Object.keys(props.lighthouse) : []
   });
-  
-  if (!data) return false;
-  if (typeof data !== 'object') return false;
-  if (!data.audits || typeof data.audits !== 'object') return false;
-  return true;
-};
+  return props.lighthouse;
+});
+
+// Computed property para validar y obtener los datos de Lighthouse de forma segura
+const lighthouseData = computed(() => {
+  console.log('🔍 [LighthouseResults] Calculando lighthouseData:', {
+    rawProp: props.lighthouse,
+    debugValue: debugLighthouse.value,
+    hasLighthouse: !!props.lighthouse,
+    type: typeof props.lighthouse,
+    isProxy: !!props.lighthouse?.__v_isProxy,
+    hasAudits: !!props.lighthouse?.audits,
+    auditsType: typeof props.lighthouse?.audits
+  });
+
+  // Si no hay datos, retornar estructura vacía
+  if (!props.lighthouse || typeof props.lighthouse !== 'object') {
+    console.warn('⚠️ [LighthouseResults] No hay datos de Lighthouse válidos:', {
+      value: props.lighthouse,
+      type: typeof props.lighthouse
+    });
+    return {
+      categories: {},
+      audits: {}
+    };
+  }
+
+  // Asegurar que tenemos las propiedades necesarias
+  const safeData = {
+    categories: props.lighthouse.categories || {},
+    audits: props.lighthouse.audits || {}
+  };
+
+  console.log('✅ [LighthouseResults] Datos normalizados:', {
+    rawCategories: props.lighthouse.categories,
+    rawAudits: props.lighthouse.audits,
+    safeCategories: safeData.categories,
+    safeAudits: safeData.audits,
+    hasCategories: !!safeData.categories,
+    hasAudits: !!safeData.audits,
+    categoriesCount: Object.keys(safeData.categories).length,
+    auditsCount: Object.keys(safeData.audits).length
+  });
+
+  return safeData;
+});
 
 const coreWebVitals = computed(() => {
-  console.log('🔍 [LighthouseResults] Computing coreWebVitals with lighthouse:', {
-    lighthouse: props.lighthouse,
-    hasAudits: !!props.lighthouse?.audits,
-    auditsKeys: props.lighthouse?.audits ? Object.keys(props.lighthouse.audits) : []
+  const data = lighthouseData.value;
+  console.log('🔍 [LighthouseResults] Calculando Core Web Vitals con:', {
+    hasAudits: !!data.audits,
+    auditsCount: Object.keys(data.audits).length
   });
-  
-  if (!validateLighthouseStructure(props.lighthouse)) {
-    console.warn('❌ [LighthouseResults] Invalid Lighthouse structure:', props.lighthouse);
-    return [];
-  }
-  
+
   const metrics = [
     {
       id: 'largest-contentful-paint',
@@ -135,61 +178,33 @@ const coreWebVitals = computed(() => {
     }
   ];
 
-  const result = metrics.map(metric => {
-    const audit = props.lighthouse.audits[metric.id];
-    console.log(`🔍 [LighthouseResults] Processing metric ${metric.id}:`, {
-      audit,
-      hasNumericValue: audit?.numericValue !== undefined,
-      hasScore: audit?.score !== undefined
+  return metrics.map(metric => {
+    const audit = data.audits[metric.id] || {};
+    console.log(`🔍 [LighthouseResults] Procesando métrica ${metric.id}:`, {
+      hasAudit: !!audit,
+      hasValue: audit.numericValue !== undefined,
+      hasScore: audit.score !== undefined
     });
-    
-    if (!audit || typeof audit !== 'object') {
-      console.warn(`❌ [LighthouseResults] Invalid audit for metric ${metric.id}:`, audit);
-      return null;
-    }
-
-    const value = audit.numericValue;
-    const score = audit.score;
-
-    if (value === undefined && score === undefined) {
-      console.warn(`❌ [LighthouseResults] No valid data for metric ${metric.id}`);
-      return null;
-    }
 
     return {
       ...metric,
-      value,
-      score
+      value: audit.numericValue || 0,
+      score: audit.score || 0
     };
-  }).filter(metric => metric !== null);
-
-  console.log('✅ [LighthouseResults] Computed coreWebVitals:', result);
-  return result;
+  });
 });
 
 const performanceOpportunities = computed(() => {
-  console.log('🔍 [LighthouseResults] Computing performanceOpportunities with lighthouse:', {
-    lighthouse: props.lighthouse,
-    hasAudits: !!props.lighthouse?.audits,
-    auditsKeys: props.lighthouse?.audits ? Object.keys(props.lighthouse.audits) : []
+  const data = lighthouseData.value;
+  console.log('🔍 [LighthouseResults] Calculando oportunidades con:', {
+    hasAudits: !!data.audits,
+    auditsCount: Object.keys(data.audits).length
   });
-  
-  if (!validateLighthouseStructure(props.lighthouse)) {
-    console.warn('❌ [LighthouseResults] Invalid Lighthouse structure:', props.lighthouse);
-    return [];
-  }
-  
-  const result = Object.entries(props.lighthouse.audits)
+
+  return Object.entries(data.audits)
     .map(([id, audit]) => {
-      console.log(`🔍 [LighthouseResults] Processing audit ${id}:`, {
-        audit,
-        hasScore: audit?.score !== undefined,
-        hasDetails: !!audit?.details,
-        detailsType: audit?.details?.type
-      });
-      
       if (!audit || typeof audit !== 'object') {
-        console.warn(`❌ [LighthouseResults] Invalid audit found: ${id}`, audit);
+        console.log(`⚠️ [LighthouseResults] Audit inválido: ${id}`);
         return null;
       }
 
@@ -197,31 +212,17 @@ const performanceOpportunities = computed(() => {
         id,
         title: audit.title || id,
         description: audit.description || '',
-        score: audit.score,
-        details: audit.details
+        score: audit.score || 0,
+        details: audit.details || {}
       };
     })
     .filter(audit => {
-      const isValid = audit !== null && 
-        audit.score !== undefined && 
-        audit.score < 0.9 && 
-        audit.details?.type === 'opportunity';
-      
-      if (!isValid) {
-        console.log(`ℹ️ [LighthouseResults] Filtered out audit ${audit?.id}:`, {
-          isNull: audit === null,
-          hasScore: audit?.score !== undefined,
-          scoreBelowThreshold: audit?.score < 0.9,
-          isOpportunity: audit?.details?.type === 'opportunity'
-        });
-      }
-      
+      if (!audit) return false;
+      const isValid = audit.score !== undefined && audit.score < 0.9 && audit.details?.type === 'opportunity';
+      console.log(`🔍 [LighthouseResults] Filtrando audit ${audit.id}:`, { isValid });
       return isValid;
     })
-    .sort((a, b) => a.score - b.score);
-
-  console.log('✅ [LighthouseResults] Computed performanceOpportunities:', result);
-  return result;
+    .sort((a, b) => (a.score || 0) - (b.score || 0));
 });
 
 const formatCategoryName = (category) => {
