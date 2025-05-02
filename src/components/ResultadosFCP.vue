@@ -19,21 +19,51 @@ const route = useRoute();
 
 // Computed para obtener el valor de FCP
 const rawFCP = computed(() => {
-  // Prioridad: prop fcp > webpagetestResults.fcp > route.state.resumen.fcp
-  let val = props.fcp;
-  if (val === null || val === undefined) {
-    val = props.webpagetestResults?.fcp;
+  try {
+    // Prioridad: prop fcp > webpagetestResults.fcp
+    let val = props.fcp;
+    if (val === null || val === undefined) {
+      val = props.webpagetestResults?.fcp;
+    }
+    
+    // Convertir a número si es string
+    if (typeof val === 'string') {
+      val = parseFloat(val);
+    }
+    
+    // Validar que sea un número válido
+    if (isNaN(val)) {
+      console.warn('🔍 [FCP] Valor no numérico:', val);
+      return null;
+    }
+    
+    return val;
+  } catch (error) {
+    console.error('❌ [FCP] Error procesando FCP:', error);
+    return null;
   }
-  if ((val === null || val === undefined) && route?.state?.resumen?.fcp) {
-    val = route.state.resumen.fcp;
-  }
-  return val;
 });
 
 const formattedFCP = computed(() => {
-  const val = rawFCP.value;
-  if (val === undefined || val === null || isNaN(val)) return 'N/A';
-  return (Number(val) / 1000).toFixed(3) + 's';
+  try {
+    const val = rawFCP.value;
+    
+    if (val === null || val === undefined) {
+      return '⏳ Cargando...';
+    }
+    
+    // Asegurarse de que el valor sea un número
+    const numVal = Number(val);
+    if (isNaN(numVal)) {
+      console.warn('🔍 [FCP] Valor no numérico en formateo:', val);
+      return 'N/A';
+    }
+    
+    return (numVal / 1000).toFixed(3) + 's';
+  } catch (error) {
+    console.error('❌ [FCP] Error formateando FCP:', error);
+    return 'Error';
+  }
 });
 
 // LOGS DETALLADOS
