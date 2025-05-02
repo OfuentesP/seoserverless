@@ -224,67 +224,94 @@ app.get('/api/webpagetest/results/:testId', async (req, res) => {
   try {
     const { testId } = req.params;
     if (!testId) {
+      log('❌ Test ID faltante en la solicitud', 'error');
       return res.status(400).json({ success: false, message: 'Test ID faltante.' });
     }
 
+    log(`🔍 Consultando resultados para testId: ${testId}`);
     const resultUrl = `https://www.webpagetest.org/jsonResult.php?test=${testId}`;
-    const response = await fetch(resultUrl);
-    const contentType = response.headers.get("content-type");
+    
+    try {
+      const response = await fetch(resultUrl);
+      const contentType = response.headers.get("content-type");
+      
+      log(`📊 Respuesta recibida - Status: ${response.status}, Content-Type: ${contentType}`);
 
-    if (contentType && contentType.includes("application/json")) {
-      const resultData = await response.json();
-      console.log('[DEBUG] WebPageTest response:', resultData);
+      if (!response.ok) {
+        const errorText = await response.text();
+        log(`❌ Error en la respuesta de WebPageTest: ${errorText}`, 'error');
+        throw new Error(`WebPageTest API error: ${response.status} ${response.statusText}`);
+      }
 
-      // Test iniciando o en progreso
-      if (resultData.statusCode === 100 || resultData.statusCode === 101) {
-        console.log(`[info] Test en progreso. Estado: ${resultData.statusCode}`);
-        return res.json({ 
-          status: 'pending', 
-          message: resultData.statusCode === 101 ? 'Iniciando test...' : 'Test en progreso...',
-          statusCode: resultData.statusCode,
-          testId: testId
+      if (contentType && contentType.includes("application/json")) {
+        const resultData = await response.json();
+        log(`📊 Datos recibidos de WebPageTest: ${JSON.stringify(resultData, null, 2)}`);
+
+        // Test iniciando o en progreso
+        if (resultData.statusCode === 100 || resultData.statusCode === 101) {
+          log(`⏳ Test en progreso. Estado: ${resultData.statusCode}`);
+          return res.json({ 
+            status: 'pending', 
+            message: resultData.statusCode === 101 ? 'Iniciando test...' : 'Test en progreso...',
+            statusCode: resultData.statusCode,
+            testId: testId
+          });
+        }
+
+        // Test completado
+        if (resultData.statusCode === 200 && resultData.data?.runs) {
+          const firstView = resultData.data.runs['1'].firstView;
+          const resumen = {
+            url: resultData.data.testUrl || null,
+            loadTime: firstView?.loadTime || null,
+            SpeedIndex: firstView?.SpeedIndex || null,
+            ttfb: firstView?.TTFB || null,
+            totalSize: firstView?.bytesIn || null,
+            requests: firstView?.requests || null,
+            lcp: firstView?.largestContentfulPaint || null,
+            cls: firstView?.cumulativeLayoutShift || null,
+            tbt: firstView?.TotalBlockingTime || null,
+            detalles: resultData.data.summary,
+            testId: testId,
+          };
+          
+          log(`✅ Test completado exitosamente para: ${testId}`);
+          return res.json({ 
+            status: 'complete', 
+            resumen 
+          });
+        }
+
+        // Estado inesperado
+        log(`⚠️ Estado inesperado de WebPageTest: ${resultData.statusCode}`, 'warn');
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Estado inesperado de WebPageTest',
+          details: resultData
+        });
+      } else {
+        const errorText = await response.text();
+        log(`❌ Respuesta no-JSON recibida: ${errorText}`, 'error');
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Respuesta inválida de WebPageTest',
+          details: errorText
         });
       }
-
-      // Test completado
-      if (resultData.statusCode === 200 && resultData.data?.runs) {
-        const firstView = resultData.data.runs['1'].firstView;
-        console.log('[DEBUG] FirstView data:', firstView);
-        
-        const resumen = {
-          url: resultData.data.testUrl || null,
-          loadTime: firstView?.loadTime || null,
-          SpeedIndex: firstView?.SpeedIndex || null,
-          ttfb: firstView?.TTFB || null,
-          totalSize: firstView?.bytesIn || null,
-          requests: firstView?.requests || null,
-          lcp: firstView?.largestContentfulPaint || null,
-          cls: firstView?.cumulativeLayoutShift || null,
-          tbt: firstView?.TotalBlockingTime || null,
-          detalles: resultData.data.summary,
-          testId: testId,
-        };
-        console.log('[DEBUG] Resumen extraído:', resumen);
-        return res.json({ status: 'complete', resumen });
-      }
-
-      // Error inesperado
-      console.error('❌ Estado inesperado WebPageTest:', resultData.statusText || resultData.statusCode);
-      return res.status(202).json({ 
-        status: 'pending',
-        message: `Test en progreso (Estado: ${resultData.statusCode})`,
-        statusCode: resultData.statusCode,
-        testId: testId
+    } catch (fetchError) {
+      log(`❌ Error al consultar WebPageTest: ${fetchError.message}`, 'error');
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Error al consultar WebPageTest',
+        error: fetchError.message
       });
     }
-
-    throw new Error('Respuesta inválida de WebPageTest');
   } catch (error) {
-    console.error('❌ Error en /webpagetest/results:', error.message);
+    log(`❌ Error inesperado: ${error.message}`, 'error');
     return res.status(500).json({ 
       success: false, 
-      message: 'Error interno obteniendo resultados',
-      details: error.message 
+      message: 'Error inesperado',
+      error: error.message
     });
   }
 });

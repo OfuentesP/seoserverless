@@ -153,52 +153,68 @@ export function useSeoAnalysis() {
       
       recordRequest();
       console.log(`[useSeoAnalysis] 🔍 Consultando resultados para testId: ${testId}`);
-      const response = await axios.get(`/api/webpagetest/results/${testId}`);
       
-      // Verificar si estamos bloqueados
-      if (isBlockedByWebPageTest(response)) {
-        console.error(`[useSeoAnalysis] ❌ Bloqueado por WebPageTest. Código: ${response.status}`);
-        isBlocked.value = true;
-        blockMessage.value = 'WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.';
-        return { status: 'error', message: 'Bloqueado por WebPageTest' };
-      }
-      
-      if (response.status === 202 || response.data.status === 'pending') {
-        console.log(`[useSeoAnalysis] ⏳ Test en progreso, esperando ${POLLING_INTERVAL/1000} segundos...`);
-        estado.value = `⏳ Test en progreso (${Math.floor((Date.now() - inicioTimestamp)/1000)}s)`;
-        await wait(POLLING_INTERVAL);
-        return { status: 'pending' };
-      }
+      try {
+        const response = await axios.get(`/api/webpagetest/results/${testId}`);
+        
+        // Verificar si estamos bloqueados
+        if (isBlockedByWebPageTest(response)) {
+          console.error(`[useSeoAnalysis] ❌ Bloqueado por WebPageTest. Código: ${response.status}`);
+          isBlocked.value = true;
+          blockMessage.value = 'WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.';
+          return { status: 'error', message: 'Bloqueado por WebPageTest' };
+        }
+        
+        if (response.status === 202 || response.data.status === 'pending') {
+          console.log(`[useSeoAnalysis] ⏳ Test en progreso, esperando ${POLLING_INTERVAL/1000} segundos...`);
+          estado.value = `⏳ Test en progreso (${Math.floor((Date.now() - inicioTimestamp)/1000)}s)`;
+          await wait(POLLING_INTERVAL);
+          return { status: 'pending' };
+        }
 
-      if (response.data.status === 'complete') {
-        console.log(`[useSeoAnalysis] ✅ Test completado después de ${Math.floor((Date.now() - inicioTimestamp)/1000)}s`);
-        return { status: 'complete', data: response.data.resumen };
-      }
+        if (response.data.status === 'complete') {
+          console.log(`[useSeoAnalysis] ✅ Test completado después de ${Math.floor((Date.now() - inicioTimestamp)/1000)}s`);
+          return { status: 'complete', data: response.data.resumen };
+        }
 
-      return { status: 'error', message: 'Error desconocido' };
+        // Manejar otros estados
+        console.error(`[useSeoAnalysis] ❌ Estado inesperado: ${response.data.status || 'unknown'}`);
+        return { 
+          status: 'error', 
+          message: `Estado inesperado: ${response.data.message || 'Error desconocido'}`
+        };
+      } catch (axiosError) {
+        console.error('[useSeoAnalysis] ❌ Error en la solicitud:', {
+          status: axiosError.response?.status,
+          data: axiosError.response?.data,
+          message: axiosError.message
+        });
+        
+        // Verificar si el error es por bloqueo
+        if (axiosError.response && (axiosError.response.status === 429 || axiosError.response.status === 403)) {
+          isBlocked.value = true;
+          blockMessage.value = 'WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.';
+          return { status: 'error', message: 'Bloqueado por WebPageTest' };
+        }
+        
+        // Si es un error 500, intentar reintentar después de un tiempo
+        if (axiosError.response?.status === 500) {
+          console.log('[useSeoAnalysis] ⚠️ Error 500, reintentando en 5 segundos...');
+          await wait(5000);
+          return { status: 'pending' };
+        }
+        
+        return { 
+          status: 'error', 
+          message: axiosError.response?.data?.message || axiosError.message 
+        };
+      }
     } catch (error) {
-      console.error('[useSeoAnalysis] ❌ Error checking WebPageTest results:', error);
-      console.error('[useSeoAnalysis] ❌ Detalles del error:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message
-      });
-      
-      // Verificar si el error es por bloqueo
-      if (error.response && (error.response.status === 429 || error.response.status === 403)) {
-        isBlocked.value = true;
-        blockMessage.value = 'WebPageTest ha bloqueado temporalmente las solicitudes. Por favor, intente más tarde.';
-        return { status: 'error', message: 'Bloqueado por WebPageTest' };
-      }
-      
-      // Si es un error 500, intentar reintentar después de un tiempo
-      if (error.response?.status === 500) {
-        console.log('[useSeoAnalysis] ⚠️ Error 500, reintentando en 5 segundos...');
-        await wait(5000);
-        return { status: 'pending' };
-      }
-      
-      return { status: 'error', message: error.message };
+      console.error('[useSeoAnalysis] ❌ Error inesperado:', error);
+      return { 
+        status: 'error', 
+        message: error.message || 'Error desconocido'
+      };
     }
   };
 
